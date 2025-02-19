@@ -5,11 +5,10 @@ import { Card, CardContent } from '@/components/ui/card';
 
 interface LoadingGridProps {
   onWeightChange: (weights: Array<{ weight: number; position: string }>) => void;
+  onFuelLoad?: (fuelWeight: number) => void;
   onCompute: () => void;
   loadingSequence?: string[];
 }
-
-
 
 // Define loading sequence based on the provided spreadsheet
 const LOADING_SEQUENCE = [
@@ -18,10 +17,16 @@ const LOADING_SEQUENCE = [
   'KL', 'KR', 'LR', 'LL', 'ML', 'MR'
 ];
 
-export function LoadingGrid({ onWeightChange, onCompute, loadingSequence = LOADING_SEQUENCE }: LoadingGridProps) {
+export function LoadingGrid({ 
+  onWeightChange, 
+  onFuelLoad, 
+  onCompute, 
+  loadingSequence = LOADING_SEQUENCE 
+}: LoadingGridProps) {
   const [weights, setWeights] = useState<Array<{ weight: number; position: string }>>([
     { weight: 500, position: loadingSequence[0] }
   ]);
+  const [fuelWeight, setFuelWeight] = useState<number>(0);
 
   const handleWeightChange = (index: number, value: string) => {
     const newWeights = weights.map((w, i) => 
@@ -54,6 +59,17 @@ export function LoadingGrid({ onWeightChange, onCompute, loadingSequence = LOADI
     const newWeights = weights.filter((_, i) => i !== index);
     setWeights(newWeights);
     onWeightChange(newWeights);
+  };
+
+  const handleFuelChange = (value: string) => {
+    const newFuelWeight = Number(value) || 0;
+    setFuelWeight(newFuelWeight);
+  };
+
+  const handleLoadFuel = () => {
+    if (onFuelLoad) {
+      onFuelLoad(fuelWeight);
+    }
   };
 
   return (
@@ -111,6 +127,55 @@ export function LoadingGrid({ onWeightChange, onCompute, loadingSequence = LOADI
           {weights.length >= LOADING_SEQUENCE.length && (
             <div className="text-sm text-amber-600 text-center">
               Maximum loading positions reached
+            </div>
+          )}
+
+          {/* Fuel Loading Section */}
+          {onFuelLoad && (
+            <div className="mt-8 pt-4 border-t">
+              <div className="font-bold text-center mb-4">Fuel Loading</div>
+              <div className="flex items-center gap-2">
+                <div className="w-20 text-right text-sm text-gray-500">
+                  Fuel (lb)
+                </div>
+                <input
+                  type="number"
+                  value={fuelWeight}
+                  onChange={(e) => handleFuelChange(e.target.value)}
+                  className="flex-1 px-3 py-2 border rounded-md text-center"
+                  min={0}
+                  max={270000}
+                  step={1000}
+                  placeholder="Enter fuel weight"
+                />
+              </div>
+              <Button 
+                onClick={handleLoadFuel}
+                className="w-full mt-4"
+                variant="default"
+              >
+                <svg 
+                  className="mr-2 h-4 w-4" 
+                  width="16" 
+                  height="16" 
+                  viewBox="0 0 24 24" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  strokeWidth="2" 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round"
+                >
+                  <path d="M3 22v-3" />
+                  <path d="M6 17h12a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2Z" />
+                  <path d="M14 17v5" />
+                  <path d="M18 17v5" />
+                  <path d="M10 17v2" />
+                  <path d="M3 11h2" />
+                  <path d="M13 5V2" />
+                  <path d="M19 5V3" />
+                </svg>
+                Load Fuel
+              </Button>
             </div>
           )}
         </div>
