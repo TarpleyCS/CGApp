@@ -1,32 +1,36 @@
 "use client"
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { DEFAULT_LOADING_SEQUENCE } from '@/lib/constants';
 
 interface LoadingGridProps {
   onWeightChange: (weights: Array<{ weight: number; position: string }>) => void;
   onFuelLoad?: (fuelWeight: number) => void;
-  onCompute: () => void;
   loadingSequence?: string[];
+  initialWeights?: Array<{ weight: number; position: string }>;
 }
 
-// Define loading sequence based on the provided spreadsheet
-const LOADING_SEQUENCE = [
-  'R', 'PL', 'PR', 'AL', 'AR', 'BL', 'BR', 'CL', 'CR', 'DL', 'DR',
-  'EL', 'ER', 'FL', 'FR', 'GL', 'GR', 'HL', 'HR', 'JL', 'JR',
-  'KL', 'KR', 'LR', 'LL', 'ML', 'MR'
-];
 
 export function LoadingGrid({ 
   onWeightChange, 
   onFuelLoad, 
-  onCompute, 
-  loadingSequence = LOADING_SEQUENCE 
+  loadingSequence = [...DEFAULT_LOADING_SEQUENCE],
+  initialWeights
 }: LoadingGridProps) {
-  const [weights, setWeights] = useState<Array<{ weight: number; position: string }>>([
-    { weight: 500, position: loadingSequence[0] }
-  ]);
+  const [weights, setWeights] = useState<Array<{ weight: number; position: string }>>(() => {
+    if (initialWeights && initialWeights.length > 0) {
+      return initialWeights;
+    }
+    return [{ weight: 500, position: loadingSequence[0] }];
+  });
   const [fuelWeight, setFuelWeight] = useState<number>(0);
+
+  useEffect(() => {
+    if (initialWeights && initialWeights.length > 0) {
+      setWeights(initialWeights);
+    }
+  }, [initialWeights]);
 
   const handleWeightChange = (index: number, value: string) => {
     const newWeights = weights.map((w, i) => 
@@ -50,7 +54,7 @@ export function LoadingGrid({
   const removeWeight = (index: number) => {
     // Don't remove if it would leave us with no weights
     if (weights.length === 1) {
-      const resetWeights = [{ weight: 0, position: LOADING_SEQUENCE[0] }];
+      const resetWeights = [{ weight: 0, position: DEFAULT_LOADING_SEQUENCE[0] }];
       setWeights(resetWeights);
       onWeightChange(resetWeights);
       return;
@@ -118,13 +122,13 @@ export function LoadingGrid({
               onClick={addWeight} 
               variant="outline" 
               className="flex-1"
-              disabled={weights.length >= LOADING_SEQUENCE.length}
+              disabled={weights.length >= DEFAULT_LOADING_SEQUENCE.length}
             >
               Add Pallet
             </Button>
           </div>
           
-          {weights.length >= LOADING_SEQUENCE.length && (
+          {weights.length >= DEFAULT_LOADING_SEQUENCE.length && (
             <div className="text-sm text-amber-600 text-center">
               Maximum loading positions reached
             </div>

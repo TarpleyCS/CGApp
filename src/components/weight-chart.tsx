@@ -1,5 +1,5 @@
 import React from 'react';
-import { Line, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { Line, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart } from 'recharts';
 
 interface EnvelopePoint {
   cg: number;
@@ -7,9 +7,9 @@ interface EnvelopePoint {
 }
 
 interface WeightChartProps {
-  data: number[][];
   variant?: '200LR' | '300ER';
   loadingPoints?: EnvelopePoint[];
+  opportunityWindow?: EnvelopePoint[];
 }
 
 // Envelope data for both variants
@@ -102,17 +102,46 @@ const ENVELOPES = {
   }
 };
 
-export function WeightChart({ data, variant = '300ER', loadingPoints }: WeightChartProps) {
+export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindow }: WeightChartProps) {
   const envelopeData = ENVELOPES[variant];
   const loadingLine = Array.isArray(loadingPoints) ? 
     [envelopeData.OEW, ...loadingPoints] : 
     [envelopeData.OEW];
 
+  // Process opportunity window for final weight CG range visualization
+  const processOpportunityWindow = () => {
+    if (!opportunityWindow || opportunityWindow.length !== 2) return null;
+    
+    // Should have exactly 2 points: min and max CG at final weight
+    const sortedPoints = [...opportunityWindow].sort((a, b) => a.cg - b.cg);
+    const minPoint = sortedPoints[0];
+    const maxPoint = sortedPoints[1];
+    
+    if (minPoint.weight !== maxPoint.weight) return null; // Safety check
+    
+    // Create a vertical line/bar showing the CG range at final weight
+    const finalWeight = minPoint.weight;
+    const minCG = minPoint.cg;
+    const maxCG = maxPoint.cg;
+    
+    // Create data for a filled area between min and max CG at the final weight
+    return {
+      minCG,
+      maxCG,
+      weight: finalWeight,
+      cgRange: maxCG - minCG
+    };
+  };
+
+  const opportunityData = processOpportunityWindow();
+
+
   return (
-    <div className="w-full p-4 border rounded-lg bg-white">
+    <div className="w-full h-full flex flex-col">
       <div className="font-bold text-lg mb-4">777-{variant} CG Envelope</div>
-      <ResponsiveContainer width="100%" height={400}>
-        <LineChart margin={{ top: 20, right: 120, left: 20, bottom: 20 }}>
+      <div className="flex-1 min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart margin={{ top: 20, right: 20, left: 20, bottom: 60 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis
             type="number"
@@ -123,7 +152,7 @@ export function WeightChart({ data, variant = '300ER', loadingPoints }: WeightCh
           />
           <YAxis
             type="number"
-            domain={variant === '300ER' ? [300000, 800000] : [200000, 800000]}
+            domain={variant === '300ER' ? [300000, 800000] : [250000, 700000]}
             label={{ value: "Weight (lbs)", angle: -90, position: "insideLeft" }}
             tickFormatter={(value) => (value / 1000).toString() + 'K'}
           />
@@ -135,7 +164,7 @@ export function WeightChart({ data, variant = '300ER', loadingPoints }: WeightCh
                 return (
                   <div className="bg-white p-2 border rounded shadow">
                     <p className="font-bold m-0">CG: {Number(cg).toFixed(1)}%MAC</p>
-                    <p className="m-0 mt-1">Weight: {new Intl.NumberFormat().format(weight)} lbs</p>
+                    <p className="m-0 mt-1">Weight: {new Intl.NumberFormat().format(Number(weight))} lbs</p>
                   </div>
                 );
               }
@@ -143,7 +172,13 @@ export function WeightChart({ data, variant = '300ER', loadingPoints }: WeightCh
             }}
             cursor={{ strokeDasharray: '3 3' }}
           />
-          <Legend layout="vertical" align="right" verticalAlign="middle" />
+          <Legend 
+            layout="horizontal" 
+            align="center" 
+            verticalAlign="bottom"
+            wrapperStyle={{ paddingTop: '40px', fontSize: '12px' }}
+            iconSize={12}
+          />
           
           <Line
             data={envelopeData.basicCGGrid}
@@ -208,9 +243,9 @@ export function WeightChart({ data, variant = '300ER', loadingPoints }: WeightCh
             name="Alt Fwd CG Limit I"
             connectNulls
           />
-          {variant === '300ER' && (
+          {variant === '300ER' && ENVELOPES['300ER'].altFwdCGLimitTakeoff2 && (
             <Line
-              data={envelopeData.altFwdCGLimitTakeoff2}
+              data={ENVELOPES['300ER'].altFwdCGLimitTakeoff2}
               type="linear"
               dataKey="weight"
               stroke="#9333ea"
@@ -220,6 +255,54 @@ export function WeightChart({ data, variant = '300ER', loadingPoints }: WeightCh
               name="Alt Fwd CG Limit II"
               connectNulls
             />
+          )}
+          {/* Opportunity Window - Show CG range at final weight */}
+          {opportunityData && (
+            <>
+              {/* Min CG boundary line at final weight */}
+              <Line
+                data={[
+                  { cg: opportunityData.minCG, weight: opportunityData.weight - 5000 },
+                  { cg: opportunityData.minCG, weight: opportunityData.weight + 5000 }
+                ]}
+                type="linear"
+                dataKey="weight"
+                stroke="#0891b2"
+                strokeWidth={2}
+                strokeDasharray="5 5"
+                dot={false}
+                name="Min Final CG"
+                connectNulls
+              />
+              {/* Max CG boundary line at final weight */}
+              <Line
+                data={[
+                  { cg: opportunityData.maxCG, weight: opportunityData.weight - 5000 },
+                  { cg: opportunityData.maxCG, weight: opportunityData.weight + 5000 }
+                ]}
+                type="linear"
+                dataKey="weight"
+                stroke="#0891b2"
+                strokeWidth={2}
+                strokeDasharray="5 5"
+                dot={false}
+                name="Max Final CG"
+                connectNulls
+              />
+              {/* Filled area showing CG range */}
+              <Area
+                data={[
+                  { cg: opportunityData.minCG, weight: opportunityData.weight, cgRange: 0 },
+                  { cg: opportunityData.minCG, weight: opportunityData.weight, cgRange: opportunityData.cgRange }
+                ]}
+                type="linear"
+                dataKey="cgRange"
+                stroke="none"
+                fill="#06b6d4"
+                fillOpacity={0.3}
+                name="Final CG Range"
+              />
+            </>
           )}
           {loadingLine.length > 1 && (
             <Line
@@ -233,8 +316,9 @@ export function WeightChart({ data, variant = '300ER', loadingPoints }: WeightCh
               connectNulls
             />
           )}
-        </LineChart>
-      </ResponsiveContainer>
+        </ComposedChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
