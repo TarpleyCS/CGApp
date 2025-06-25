@@ -71,7 +71,7 @@ export default function WeightCalculator() {
     const pattern = LOADING_PATTERNS[selectedPattern as keyof typeof LOADING_PATTERNS];
     const generatedWeights = pattern.map((position) => ({
       position,
-      weight: Math.floor(Math.random() * 3000) + 5000 // Random weight between 4000-6000 lbs
+      weight: Math.floor(Math.random() * 3000) + 5000 // Random weight between 5000-8000 lbs
     }));
     
     setTestWeights(generatedWeights);
