@@ -79,11 +79,7 @@ export default function WeightCalculator() {
     const defaults = getDefaultWeights(unitSystem);
     const generatedWeights = pattern.map((position) => ({
       position,
-<<<<<<< HEAD
-      weight: Math.floor(Math.random() * 3000) + 5000 // Random weight between 5000-8000 lbs
-=======
       weight: Math.floor(Math.random() * (defaults.testFillMax - defaults.testFillMin)) + defaults.testFillMin
->>>>>>> 7fb77a2 (Unit conversions)
     }));
     
     setTestWeights(generatedWeights);
