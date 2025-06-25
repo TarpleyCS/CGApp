@@ -1,5 +1,6 @@
 import React from 'react';
 import { Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart } from 'recharts';
+import { convertWeight, formatWeight, type UnitSystem } from '@/lib/units';
 
 interface EnvelopePoint {
   cg: number;
@@ -10,6 +11,7 @@ interface WeightChartProps {
   variant?: '200LR' | '300ER';
   loadingPoints?: EnvelopePoint[];
   opportunityWindow?: EnvelopePoint[];
+  unitSystem?: UnitSystem;
 }
 
 // Envelope data for both variants
@@ -102,7 +104,7 @@ const ENVELOPES = {
   }
 };
 
-export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindow }: WeightChartProps) {
+export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindow, unitSystem = 'imperial' }: WeightChartProps) {
   const envelopeData = ENVELOPES[variant];
   const loadingLine = Array.isArray(loadingPoints) ? 
     [envelopeData.OEW, ...loadingPoints] : 
@@ -153,7 +155,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
           <YAxis
             type="number"
             domain={variant === '300ER' ? [300000, 800000] : [250000, 700000]}
-            label={{ value: "Weight (lbs)", angle: -90, position: "insideLeft" }}
+            label={{ value: `Weight (${unitSystem === 'imperial' ? 'lbs' : 'kg'})`, angle: -90, position: "insideLeft" }}
             tickFormatter={(value) => (value / 1000).toString() + 'K'}
           />
           <Tooltip
@@ -161,10 +163,11 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
               if (active && payload && payload.length) {
                 const cg = payload[0].payload.cg;
                 const weight = payload[0].value;
+                const convertedWeight = convertWeight(Number(weight), 'imperial', unitSystem);
                 return (
                   <div className="bg-white p-2 border rounded shadow">
                     <p className="font-bold m-0">CG: {Number(cg).toFixed(1)}%MAC</p>
-                    <p className="m-0 mt-1">Weight: {new Intl.NumberFormat().format(Number(weight))} lbs</p>
+                    <p className="m-0 mt-1">Weight: {formatWeight(convertedWeight, unitSystem)}</p>
                   </div>
                 );
               }

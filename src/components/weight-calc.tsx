@@ -18,6 +18,12 @@ import {
   type LoadingPoint,
   type CalculationResult
 } from '@/lib/calculations';
+import { 
+  convertWeight, 
+  formatWeight, 
+  getDefaultWeights,
+  type UnitSystem 
+} from '@/lib/units';
 
 
 
@@ -34,6 +40,7 @@ export default function WeightCalculator() {
   const [testWeights, setTestWeights] = useState<WeightData[]>([]);
   const [opportunityWindow, setOpportunityWindow] = useState<LoadingPoint[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial');
 
 
   const handleCompute = (weights: WeightData[]) => {
@@ -69,9 +76,14 @@ export default function WeightCalculator() {
 
   const handleTestFill = () => {
     const pattern = LOADING_PATTERNS[selectedPattern as keyof typeof LOADING_PATTERNS];
+    const defaults = getDefaultWeights(unitSystem);
     const generatedWeights = pattern.map((position) => ({
       position,
+<<<<<<< HEAD
       weight: Math.floor(Math.random() * 3000) + 5000 // Random weight between 5000-8000 lbs
+=======
+      weight: Math.floor(Math.random() * (defaults.testFillMax - defaults.testFillMin)) + defaults.testFillMin
+>>>>>>> 7fb77a2 (Unit conversions)
     }));
     
     setTestWeights(generatedWeights);
@@ -411,6 +423,26 @@ export default function WeightCalculator() {
               777-200LR
             </Button>
               </div>
+              
+              {/* Unit System Toggle */}
+              <div className="flex gap-2 mt-3">
+                <Button
+                  onClick={() => setUnitSystem('imperial')}
+                  variant={unitSystem === 'imperial' ? 'default' : 'outline'}
+                  size="sm"
+                  className="flex-1"
+                >
+                  Imperial (lbs)
+                </Button>
+                <Button
+                  onClick={() => setUnitSystem('metric')}
+                  variant={unitSystem === 'metric' ? 'default' : 'outline'}
+                  size="sm"
+                  className="flex-1"
+                >
+                  Metric (kg)
+                </Button>
+              </div>
             </div>
           )}
           
@@ -506,6 +538,7 @@ export default function WeightCalculator() {
               onFuelLoad={handleFuelLoad}
               loadingSequence={[...LOADING_PATTERNS[selectedPattern as keyof typeof LOADING_PATTERNS]]}
               initialWeights={testWeights}
+              unitSystem={unitSystem}
             />
           </div>
           </div>
@@ -534,12 +567,14 @@ export default function WeightCalculator() {
                           variant="300ER"
                           loadingPoints={loadingPoints}
                           opportunityWindow={opportunityWindow}
+                          unitSystem={unitSystem}
                         />
                       ) : (
                         <WeightChart
                           variant="200LR"
                           loadingPoints={loadingPoints}
                           opportunityWindow={opportunityWindow}
+                          unitSystem={unitSystem}
                         />
                       )}
                     </div>
@@ -581,9 +616,16 @@ export default function WeightCalculator() {
                   <div className="p-3 border rounded-lg bg-blue-50">
                     <div className="font-bold text-sm">ZFW</div>
                     <div className="text-xl font-mono">
-                      {new Intl.NumberFormat().format(fuelLoaded ? 
-                        loadingPoints[loadingPoints.length - 2].weight : 
-                        loadingPoints[loadingPoints.length - 1].weight)} lbs
+                      {formatWeight(
+                        convertWeight(
+                          fuelLoaded ? 
+                            loadingPoints[loadingPoints.length - 2].weight : 
+                            loadingPoints[loadingPoints.length - 1].weight,
+                          'imperial',
+                          unitSystem
+                        ),
+                        unitSystem
+                      )}
                     </div>
                     <div className="text-xs text-gray-600">
                       {fuelLoaded ? 
@@ -594,7 +636,9 @@ export default function WeightCalculator() {
                   
                   <div className="p-3 border rounded-lg bg-yellow-50">
                     <div className="font-bold text-sm">Fuel</div>
-                    <div className="text-xl font-mono">{new Intl.NumberFormat().format(fuelWeight)} lbs</div>
+                    <div className="text-xl font-mono">
+                      {formatWeight(convertWeight(fuelWeight, 'imperial', unitSystem), unitSystem)}
+                    </div>
                     {fuelLoaded && (
                       <div className="text-xs text-gray-600">
                         Arm: {getFuelArm(fuelWeight).toFixed(1)}
@@ -605,7 +649,10 @@ export default function WeightCalculator() {
                   <div className={`p-3 border rounded-lg ${fuelLoaded ? 'bg-green-50' : 'bg-orange-50'}`}>
                     <div className="font-bold text-sm">TOW</div>
                     <div className="text-xl font-mono">
-                      {new Intl.NumberFormat().format(loadingPoints[loadingPoints.length - 1].weight)} lbs
+                      {formatWeight(
+                        convertWeight(loadingPoints[loadingPoints.length - 1].weight, 'imperial', unitSystem),
+                        unitSystem
+                      )}
                     </div>
                     <div className={`text-xs ${fuelLoaded ? 'text-green-600' : 'text-orange-600'}`}>
                       {loadingPoints[loadingPoints.length - 1].cg.toFixed(2)}% MAC

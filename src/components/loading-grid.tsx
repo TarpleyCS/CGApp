@@ -3,12 +3,21 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DEFAULT_LOADING_SEQUENCE } from '@/lib/constants';
+import { 
+  convertWeight, 
+  getWeightUnit, 
+  getMaxWeightLimits, 
+  getWeightStep, 
+  getDefaultWeights,
+  type UnitSystem 
+} from '@/lib/units';
 
 interface LoadingGridProps {
   onWeightChange: (weights: Array<{ weight: number; position: string }>) => void;
   onFuelLoad?: (fuelWeight: number) => void;
   loadingSequence?: string[];
   initialWeights?: Array<{ weight: number; position: string }>;
+  unitSystem: UnitSystem;
 }
 
 
@@ -16,13 +25,15 @@ export function LoadingGrid({
   onWeightChange, 
   onFuelLoad, 
   loadingSequence = [...DEFAULT_LOADING_SEQUENCE],
-  initialWeights
+  initialWeights,
+  unitSystem
 }: LoadingGridProps) {
   const [weights, setWeights] = useState<Array<{ weight: number; position: string }>>(() => {
     if (initialWeights && initialWeights.length > 0) {
       return initialWeights;
     }
-    return [{ weight: 500, position: loadingSequence[0] }];
+    const defaults = getDefaultWeights(unitSystem);
+    return [{ weight: defaults.pallet, position: loadingSequence[0] }];
   });
   const [fuelWeight, setFuelWeight] = useState<number>(0);
 
@@ -33,8 +44,12 @@ export function LoadingGrid({
   }, [initialWeights]);
 
   const handleWeightChange = (index: number, value: string) => {
+    // Convert input value from display units to imperial (for internal calculations)
+    const inputWeight = Number(value) || 0;
+    const weightInImperial = convertWeight(inputWeight, unitSystem, 'imperial');
+    
     const newWeights = weights.map((w, i) => 
-      i === index ? { ...w, weight: Number(value) || 0 } : w
+      i === index ? { ...w, weight: weightInImperial } : w
     );
     setWeights(newWeights);
     onWeightChange(newWeights);
@@ -46,7 +61,8 @@ export function LoadingGrid({
     }
     
     const nextPosition = loadingSequence[weights.length];
-    const newWeights = [...weights, { weight: 6000, position: nextPosition }];
+    const defaults = getDefaultWeights(unitSystem);
+    const newWeights = [...weights, { weight: defaults.palletAdd, position: nextPosition }];
     setWeights(newWeights);
     onWeightChange(newWeights);
   };
@@ -66,8 +82,10 @@ export function LoadingGrid({
   };
 
   const handleFuelChange = (value: string) => {
-    const newFuelWeight = Number(value) || 0;
-    setFuelWeight(newFuelWeight);
+    // Convert input value from display units to imperial (for internal calculations)
+    const inputWeight = Number(value) || 0;
+    const weightInImperial = convertWeight(inputWeight, unitSystem, 'imperial');
+    setFuelWeight(weightInImperial);
   };
 
   const handleLoadFuel = () => {
@@ -88,13 +106,13 @@ export function LoadingGrid({
               </div>
               <input
                 type="number"
-                value={weight.weight || ''}
+                value={weight.weight ? Math.round(convertWeight(weight.weight, 'imperial', unitSystem)) : ''}
                 onChange={(e) => handleWeightChange(index, e.target.value)}
                 className="flex-1 px-3 py-2 border rounded-md text-center"
                 min={0}
-                max={12000}
-                step={500}
-                placeholder="Enter weight"
+                max={getMaxWeightLimits(unitSystem).pallet}
+                step={getWeightStep(unitSystem, 'pallet')}
+                placeholder={`Enter weight (${getWeightUnit(unitSystem)})`}
               />
               <button
                 onClick={() => removeWeight(index)}
@@ -140,17 +158,17 @@ export function LoadingGrid({
               <div className="font-bold text-center mb-4">Fuel Loading</div>
               <div className="flex items-center gap-2">
                 <div className="w-20 text-right text-sm text-gray-500">
-                  Fuel (lb)
+                  Fuel ({getWeightUnit(unitSystem)})
                 </div>
                 <input
                   type="number"
-                  value={fuelWeight}
+                  value={fuelWeight ? Math.round(convertWeight(fuelWeight, 'imperial', unitSystem)) : ''}
                   onChange={(e) => handleFuelChange(e.target.value)}
                   className="flex-1 px-3 py-2 border rounded-md text-center"
                   min={0}
-                  max={270000}
-                  step={1000}
-                  placeholder="Enter fuel weight"
+                  max={getMaxWeightLimits(unitSystem).fuel}
+                  step={getWeightStep(unitSystem, 'fuel')}
+                  placeholder={`Enter fuel weight (${getWeightUnit(unitSystem)})`}
                 />
               </div>
               <Button 
