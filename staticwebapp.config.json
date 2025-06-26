@@ -1,43 +1,10 @@
 {
-  "routes": [
-    {
-      "route": "/login",
-      "redirect": "/.auth/login/aad?domain_hint=mammoth777.com"
-    },
-    {
-      "route": "/logout", 
-      "redirect": "/.auth/logout"
-    },
-    {
-      "route": "/*",
-      "allowedRoles": ["authenticated"],
-      "statusCode": 302,
-      "redirect": "/login"
-    }
-  ],
-  "auth": {
-    "identityProviders": {
-      "azureActiveDirectory": {
-        "registration": {
-          "openIdIssuer": "https://login.microsoftonline.com/common"
-        },
-        "login": {
-          "loginParameters": ["domain_hint=mammoth777.com"]
-        }
-      }
-    }
-  },
-  "responseOverrides": {
-    "401": {
-      "redirect": "/login"
-    }
-  },
   "navigationFallback": {
     "rewrite": "/index.html"
   },
   "mimeTypes": {
     ".json": "application/json",
-    ".js": "text/javascript", 
+    ".js": "text/javascript",
     ".css": "text/css",
     ".ico": "image/x-icon"
   }
