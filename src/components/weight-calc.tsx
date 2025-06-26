@@ -384,7 +384,7 @@ export default function WeightCalculator() {
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           {!sidebarCollapsed && (
             <div>
-              <h1 className="text-xl font-bold text-gray-900">777 Weight & Balance</h1>
+              <h1 className="text-xl font-bold text-black">777 Weight & Balance</h1>
               
               {/* Aircraft Variant Selection */}
               <div className="flex gap-2 mt-3">
@@ -457,7 +457,7 @@ export default function WeightCalculator() {
         {!sidebarCollapsed && (
           <div className="p-4 border-b border-gray-200 space-y-3">
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-2 block">Loading Pattern</label>
+            <label className="text-sm font-medium text-black mb-2 block">Loading Pattern</label>
             <select
               className="w-full px-3 py-2 border rounded-md text-sm"
               value={selectedPattern}
@@ -586,8 +586,8 @@ export default function WeightCalculator() {
                     ) : (
                       <div className="flex items-center justify-center h-full text-gray-500">
                         <div className="text-center">
-                          <p className="text-lg">No loading data available</p>
-                          <p className="text-sm">Use the Test Fill button or manually add weights to see loading progression data</p>
+                          <p className="text-lg text-black">No loading data available</p>
+                          <p className="text-sm text-black">Use the Test Fill button or manually add weights to see loading progression data</p>
                         </div>
                       </div>
                     )}
@@ -601,7 +601,7 @@ export default function WeightCalculator() {
         {/* Right Summary Panel */}
         <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
           <div className="p-4 border-b border-gray-200">
-            <h2 className="text-lg font-bold text-gray-900">Summary</h2>
+            <h2 className="text-lg font-bold text-black">Summary</h2>
           </div>
           
           <div className="flex-1 p-4 overflow-y-auto">
@@ -623,7 +623,7 @@ export default function WeightCalculator() {
                         unitSystem
                       )}
                     </div>
-                    <div className="text-xs text-gray-600">
+                    <div className="text-xs text-black">
                       {fuelLoaded ? 
                         loadingPoints[loadingPoints.length - 2].cg.toFixed(2) : 
                         loadingPoints[loadingPoints.length - 1].cg.toFixed(2)}% MAC
@@ -636,7 +636,7 @@ export default function WeightCalculator() {
                       {formatWeight(convertWeight(fuelWeight, 'imperial', unitSystem), unitSystem)}
                     </div>
                     {fuelLoaded && (
-                      <div className="text-xs text-gray-600">
+                      <div className="text-xs text-black">
                         Arm: {getFuelArm(fuelWeight).toFixed(1)}
                       </div>
                     )}
@@ -660,7 +660,7 @@ export default function WeightCalculator() {
                 {opportunityWindow.length > 0 && (
                   <div className="p-3 border rounded-lg bg-cyan-50">
                     <h3 className="font-bold text-sm mb-2">CG Opportunity Range</h3>
-                    <p className="text-xs text-gray-600 mb-2">
+                    <p className="text-xs text-black mb-2">
                       Range of possible CG positions with current cargo weights
                     </p>
                     <div className="text-xs space-y-1">
@@ -722,10 +722,10 @@ export default function WeightCalculator() {
                 )}
               </div>
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-400">
+              <div className="flex items-center justify-center h-full">
                 <div className="text-center">
-                  <p className="text-sm">No data available</p>
-                  <p className="text-xs mt-1">Use Test Fill to see summary</p>
+                  <p className="text-sm text-black">No data available</p>
+                  <p className="text-xs mt-1 text-black">Use Test Fill to see summary</p>
                 </div>
               </div>
             )}

@@ -101,7 +101,7 @@ export function LoadingGrid({
           <div className="font-bold text-center mb-4">Pallet Loading Sequence</div>
           {weights.map((weight, index) => (
             <div key={index} className="flex items-center gap-2">
-              <div className="w-20 text-right text-sm text-gray-500">
+              <div className="w-20 text-right text-sm text-black">
                 {`${index + 1}. ${weight.position}`}
               </div>
               <input
@@ -157,7 +157,7 @@ export function LoadingGrid({
             <div className="mt-8 pt-4 border-t">
               <div className="font-bold text-center mb-4">Fuel Loading</div>
               <div className="flex items-center gap-2">
-                <div className="w-20 text-right text-sm text-gray-500">
+                <div className="w-20 text-right text-sm text-black">
                   Fuel ({getWeightUnit(unitSystem)})
                 </div>
                 <input
