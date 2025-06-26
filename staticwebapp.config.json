@@ -1,22 +1,4 @@
 {
-  "routes": [
-    {
-      "route": "/*",
-      "allowedRoles": ["authenticated"]
-    }
-  ],
-  "auth": {
-    "identityProviders": {
-      "azureActiveDirectory": {
-        "registration": {
-          "openIdIssuer": "https://login.microsoftonline.com/common"
-        },
-        "login": {
-          "loginParameters": ["domain_hint=mammoth777.com"]
-        }
-      }
-    }
-  },
   "navigationFallback": {
     "rewrite": "/index.html"
   },
