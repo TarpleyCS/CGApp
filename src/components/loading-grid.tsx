@@ -28,18 +28,18 @@ export function LoadingGrid({
   initialWeights,
   unitSystem
 }: LoadingGridProps) {
-  const [weights, setWeights] = useState<Array<{ weight: number; position: string }>>(() => {
+  const [weights, setWeights] = useState<Array<{ weight: number; position: string; id: string }>>(() => {
     if (initialWeights && initialWeights.length > 0) {
-      return initialWeights;
+      return initialWeights.map((w, i) => ({ ...w, id: `${w.position}-${i}` }));
     }
     const defaults = getDefaultWeights(unitSystem);
-    return [{ weight: defaults.pallet, position: loadingSequence[0] }];
+    return [{ weight: defaults.pallet, position: loadingSequence[0], id: `${loadingSequence[0]}-0` }];
   });
   const [fuelWeight, setFuelWeight] = useState<number>(0);
 
   useEffect(() => {
     if (initialWeights && initialWeights.length > 0) {
-      setWeights(initialWeights);
+      setWeights(initialWeights.map((w, i) => ({ ...w, id: `${w.position}-${i}` })));
     }
   }, [initialWeights]);
 
@@ -52,7 +52,7 @@ export function LoadingGrid({
       i === index ? { ...w, weight: weightInImperial } : w
     );
     setWeights(newWeights);
-    onWeightChange(newWeights);
+    onWeightChange(newWeights.map(({ id, ...rest }) => rest));
   };
 
   const addWeight = () => {
@@ -62,23 +62,23 @@ export function LoadingGrid({
     
     const nextPosition = loadingSequence[weights.length];
     const defaults = getDefaultWeights(unitSystem);
-    const newWeights = [...weights, { weight: defaults.palletAdd, position: nextPosition }];
+    const newWeights = [...weights, { weight: defaults.palletAdd, position: nextPosition, id: `${nextPosition}-${weights.length}` }];
     setWeights(newWeights);
-    onWeightChange(newWeights);
+    onWeightChange(newWeights.map(({ id, ...rest }) => rest));
   };
 
   const removeWeight = (index: number) => {
     // Don't remove if it would leave us with no weights
     if (weights.length === 1) {
-      const resetWeights = [{ weight: 0, position: DEFAULT_LOADING_SEQUENCE[0] }];
+      const resetWeights = [{ weight: 0, position: DEFAULT_LOADING_SEQUENCE[0], id: `${DEFAULT_LOADING_SEQUENCE[0]}-0` }];
       setWeights(resetWeights);
-      onWeightChange(resetWeights);
+      onWeightChange(resetWeights.map(({ id, ...rest }) => rest));
       return;
     }
 
     const newWeights = weights.filter((_, i) => i !== index);
     setWeights(newWeights);
-    onWeightChange(newWeights);
+    onWeightChange(newWeights.map(({ id, ...rest }) => rest));
   };
 
   const handleFuelChange = (value: string) => {
@@ -100,7 +100,7 @@ export function LoadingGrid({
         <div className="space-y-4">
           <div className="font-bold text-center mb-4">Pallet Loading Sequence</div>
           {weights.map((weight, index) => (
-            <div key={index} className="flex items-center gap-2">
+            <div key={weight.id} className="flex items-center gap-2">
               <div className="w-20 text-right text-sm text-black">
                 {`${index + 1}. ${weight.position}`}
               </div>
@@ -108,6 +108,18 @@ export function LoadingGrid({
                 type="number"
                 value={weight.weight ? Math.round(convertWeight(weight.weight, 'imperial', unitSystem)) : ''}
                 onChange={(e) => handleWeightChange(index, e.target.value)}
+                onKeyDown={(e) => {
+                  // Prevent arrow keys from triggering unwanted behavior
+                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    e.stopPropagation();
+                  }
+                }}
+                onWheel={(e) => {
+                  // Prevent mouse wheel from changing number input values when focused
+                  if (document.activeElement === e.currentTarget) {
+                    e.preventDefault();
+                  }
+                }}
                 className="flex-1 px-3 py-2 border rounded-md text-center"
                 min={0}
                 max={getMaxWeightLimits(unitSystem).pallet}
