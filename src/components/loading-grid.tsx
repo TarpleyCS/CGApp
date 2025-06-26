@@ -52,7 +52,7 @@ export function LoadingGrid({
       i === index ? { ...w, weight: weightInImperial } : w
     );
     setWeights(newWeights);
-    onWeightChange(newWeights.map(({ id, ...rest }) => rest));
+    onWeightChange(newWeights.map(({ weight, position }) => ({ weight, position })));
   };
 
   const addWeight = () => {
@@ -64,7 +64,7 @@ export function LoadingGrid({
     const defaults = getDefaultWeights(unitSystem);
     const newWeights = [...weights, { weight: defaults.palletAdd, position: nextPosition, id: `${nextPosition}-${weights.length}` }];
     setWeights(newWeights);
-    onWeightChange(newWeights.map(({ id, ...rest }) => rest));
+    onWeightChange(newWeights.map(({ weight, position }) => ({ weight, position })));
   };
 
   const removeWeight = (index: number) => {
@@ -72,13 +72,13 @@ export function LoadingGrid({
     if (weights.length === 1) {
       const resetWeights = [{ weight: 0, position: DEFAULT_LOADING_SEQUENCE[0], id: `${DEFAULT_LOADING_SEQUENCE[0]}-0` }];
       setWeights(resetWeights);
-      onWeightChange(resetWeights.map(({ id, ...rest }) => rest));
+      onWeightChange(resetWeights.map(({ weight, position }) => ({ weight, position })));
       return;
     }
 
     const newWeights = weights.filter((_, i) => i !== index);
     setWeights(newWeights);
-    onWeightChange(newWeights.map(({ id, ...rest }) => rest));
+    onWeightChange(newWeights.map(({ weight, position }) => ({ weight, position })));
   };
 
   const handleFuelChange = (value: string) => {
