@@ -145,7 +145,89 @@ export const FUEL_CG_DATA: readonly [number, number][] = [
   [27290, 1146.4]
 ] as const;
 
+// Boeing standard pallet specifications
+export const BOEING_PALLET_SPECS = {
+  'LD3': {
+    description: 'LD3 Container',
+    maxWeight: 3500,
+    dimensions: '60.4" x 61.5" x 64"',
+    momentMultiplier: 1.0,
+    category: 'Container'
+  },
+  'LD7': {
+    description: 'LD7 Container',
+    maxWeight: 2950,
+    dimensions: '61.5" x 125" x 64"',
+    momentMultiplier: 1.1,
+    category: 'Container'
+  },
+  'LD9': {
+    description: 'LD9 Container',
+    maxWeight: 6800,
+    dimensions: '125" x 88" x 64"',
+    momentMultiplier: 1.2,
+    category: 'Container'
+  },
+  'LD11': {
+    description: 'LD11 Container',
+    maxWeight: 3500,
+    dimensions: '125" x 61.5" x 64"',
+    momentMultiplier: 1.0,
+    category: 'Container'
+  },
+  'PMC': {
+    description: 'Pallet + Main Deck Container',
+    maxWeight: 11500,
+    dimensions: '125" x 96" x 118"',
+    momentMultiplier: 1.3,
+    category: 'Main Deck'
+  },
+  'PLA': {
+    description: 'Pallet + Lower Deck A Position',
+    maxWeight: 7000,
+    dimensions: '125" x 88" x 64"',
+    momentMultiplier: 1.1,
+    category: 'Lower Deck'
+  },
+  'PLB': {
+    description: 'Pallet + Lower Deck B Position',
+    maxWeight: 4500,
+    dimensions: '88" x 125" x 64"',
+    momentMultiplier: 1.0,
+    category: 'Lower Deck'
+  },
+  'AKE': {
+    description: 'AKE Unit Load Device',
+    maxWeight: 1590,
+    dimensions: '61.5" x 86.5" x 64"',
+    momentMultiplier: 0.9,
+    category: 'Container'
+  }
+} as const;
+
+// Custom pallet positions with customizable names and moment arms
+export const CUSTOM_PALLET_POSITIONS = {
+  // Default positions using standard position map
+  'CP1': {
+    name: 'Custom Pallet Position 1',
+    momentArm: 500,
+    palletType: 'LD3'
+  },
+  'CP2': {
+    name: 'Custom Pallet Position 2',
+    momentArm: 750,
+    palletType: 'LD7'
+  },
+  'CP3': {
+    name: 'Custom Pallet Position 3',
+    momentArm: 1000,
+    palletType: 'LD9'
+  }
+} as const;
+
 // Type definitions for commonly used interfaces
 export type PositionCode = keyof typeof POSITION_MAP;
 export type AircraftVariant = keyof typeof OEW_DATA;
 export type LoadingPatternType = keyof typeof LOADING_PATTERNS;
+export type BoeingPalletType = keyof typeof BOEING_PALLET_SPECS;
+export type CustomPalletPositionCode = keyof typeof CUSTOM_PALLET_POSITIONS;

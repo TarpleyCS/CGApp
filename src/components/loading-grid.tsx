@@ -77,7 +77,7 @@ export function LoadingGrid({
   };
 
   return (
-    <Card>
+    <Card className="border-0 shadow-none">
       <CardContent className="p-4">
         <div className="space-y-4">
           <div className="font-bold text-center mb-4">Pallet Loading Sequence</div>

@@ -4,12 +4,14 @@ import React, { useState } from 'react';
 import { LoadingGrid } from './loading-grid';
 import { WeightChart} from './weight-chart';
 import { LoadingTable } from './loading-table';
+import { AnalyticsDashboard } from './analytics-dashboard';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // Import shared constants and utilities
-import { OEW_DATA, LOADING_PATTERNS } from '@/lib/constants';
+import { OEW_DATA, LOADING_PATTERNS, POSITION_MAP, BOEING_PALLET_SPECS, CUSTOM_PALLET_POSITIONS } from '@/lib/constants';
+import { useLoadingPatterns, useOptimizationHistory, usePatternRankings, useCustomPositions, useCustomPalletStyles } from '@/hooks/useDatabase';
 import { 
   calculateCumulativeWeights, 
   addFuelToCalculation, 
@@ -18,6 +20,15 @@ import {
   type LoadingPoint,
   type CalculationResult
 } from '@/lib/calculations';
+import {
+  optimizeCargoWithPSO,
+  optimizeCargoWithILP,
+  createCGFitnessFunction,
+  createConstraintFunction,
+  createObjectiveFunction,
+  type PSO_Config,
+  type ILP_Config
+} from '@/lib/optimization';
 
 
 
@@ -34,6 +45,49 @@ export default function WeightCalculator() {
   const [testWeights, setTestWeights] = useState<WeightData[]>([]);
   const [opportunityWindow, setOpportunityWindow] = useState<LoadingPoint[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [customPatterns, setCustomPatterns] = useState<{[key: string]: string[]}>({});
+  const [newPatternName, setNewPatternName] = useState('');
+  const [newPatternOrder, setNewPatternOrder] = useState<string[]>([]);
+  const [isCreatingPattern, setIsCreatingPattern] = useState(false);
+  
+  // Database hooks
+  const { patterns: dbPatterns, savePattern, ratePattern } = useLoadingPatterns();
+  const { saveOptimization } = useOptimizationHistory();
+  const { updateRanking } = usePatternRankings();
+  const { positions: dbCustomPositions, savePosition: saveCustomPosition, updatePosition: updateCustomPosition } = useCustomPositions();
+  const { styles: dbCustomPalletStyles, saveStyle: saveCustomPalletStyle } = useCustomPalletStyles();
+  
+  // Pattern rating state
+  const [patternRatings, setPatternRatings] = useState<{[key: string]: number}>({});
+  const [showRatingDialog, setShowRatingDialog] = useState<string | null>(null);
+  
+  // Pallet style management
+  const [customPalletStyles, setCustomPalletStyles] = useState<{[key: string]: {
+    description: string;
+    maxWeight: number;
+    dimensions: string;
+    momentMultiplier: number;
+    category: string;
+  }}>({});
+  const [newPalletName, setNewPalletName] = useState('');
+  const [newPalletDescription, setNewPalletDescription] = useState('');
+  const [newPalletMaxWeight, setNewPalletMaxWeight] = useState(0);
+  const [newPalletDimensions, setNewPalletDimensions] = useState('');
+  const [newPalletMomentMultiplier, setNewPalletMomentMultiplier] = useState(1.0);
+  const [newPalletCategory, setNewPalletCategory] = useState('Container');
+  const [isCreatingPallet, setIsCreatingPallet] = useState(false);
+  
+  // Custom pallet position management
+  const [customPalletPositions, setCustomPalletPositions] = useState<{[key: string]: {
+    name: string;
+    momentArm: number;
+    palletType: string;
+  }}>({});
+  const [newPositionCode, setNewPositionCode] = useState('');
+  const [newPositionName, setNewPositionName] = useState('');
+  const [newPositionMomentArm, setNewPositionMomentArm] = useState(0);
+  const [newPositionPalletType, setNewPositionPalletType] = useState('LD3');
+  const [isCreatingPosition, setIsCreatingPosition] = useState(false);
 
 
   const handleCompute = (weights: WeightData[]) => {
@@ -68,7 +122,8 @@ export default function WeightCalculator() {
   };
 
   const handleTestFill = () => {
-    const pattern = LOADING_PATTERNS[selectedPattern as keyof typeof LOADING_PATTERNS];
+    const allPatterns = getAllPatterns();
+    const pattern = allPatterns[selectedPattern] || LOADING_PATTERNS.default;
     const generatedWeights = pattern.map((position) => ({
       position,
       weight: Math.floor(Math.random() * 3000) + 5000 // Random weight between 4000-6000 lbs
@@ -155,11 +210,14 @@ export default function WeightCalculator() {
     return minWeight === Infinity ? 250000 : minWeight; // Default min if not found
   };
 
-  const handleOptimize = () => {
+  const handleOptimize = async () => {
     if (tableData.length === 0) return;
 
     const currentWeights = testWeights.length > 0 ? testWeights : [];
     if (currentWeights.length === 0) return;
+
+    const startTime = Date.now();
+    const initialWeights = [...currentWeights];
 
     // Try different arrangements to find one that keeps final CG in optimal range
     let bestWeights = [...currentWeights];
@@ -216,12 +274,407 @@ export default function WeightCalculator() {
     // Apply the best arrangement found
     setTestWeights(bestWeights);
     handleCompute(bestWeights);
+
+    // Track optimization performance
+    const success = bestScore < 1000000; // Success if no major violations
+    await trackOptimization('basic', initialWeights, bestWeights, startTime, success, `${selectedPattern}-basic`);
   };
+
+  const handleOptimizePSO = async () => {
+    if (tableData.length === 0) return;
+
+    const currentWeights = testWeights.length > 0 ? testWeights : [];
+    if (currentWeights.length === 0) return;
+
+    const startTime = Date.now();
+    const initialWeights = [...currentWeights];
+
+    const config: PSO_Config = {
+      numParticles: 20,
+      maxIterations: 50,
+      inertiaWeight: 0.7,
+      cognitiveWeight: 1.4,
+      socialWeight: 1.4,
+      variant
+    };
+
+    const fitnessFunction = createCGFitnessFunction(
+      variant,
+      undefined,
+      calculateCumulativeWeights,
+      isPointInEnvelope
+    );
+
+    const result = optimizeCargoWithPSO(currentWeights, config, fitnessFunction);
+    
+    setTestWeights(result.bestArrangement);
+    handleCompute(result.bestArrangement);
+
+    // Track optimization performance
+    const success = result.bestFitness < 1000; // Success based on fitness threshold
+    await trackOptimization('PSO', initialWeights, result.bestArrangement, startTime, success, `${selectedPattern}-PSO`);
+  };
+
+  const handleOptimizeILP = async () => {
+    if (tableData.length === 0) return;
+
+    const currentWeights = testWeights.length > 0 ? testWeights : [];
+    if (currentWeights.length === 0) return;
+
+    const startTime = Date.now();
+    const initialWeights = [...currentWeights];
+
+    const config: ILP_Config = {
+      variant,
+      maxIterations: 100,
+      tolerance: 0.001
+    };
+
+    const objectiveFunction = createObjectiveFunction(
+      variant,
+      undefined,
+      calculateCumulativeWeights
+    );
+
+    const constraintFunction = createConstraintFunction(
+      variant,
+      calculateCumulativeWeights,
+      isPointInEnvelope
+    );
+
+    const result = optimizeCargoWithILP(currentWeights, config, objectiveFunction, constraintFunction);
+    
+    setTestWeights(result.optimalArrangement);
+    handleCompute(result.optimalArrangement);
+
+    // Track optimization performance
+    const success = result.converged && result.objectiveValue < 1000;
+    await trackOptimization('ILP', initialWeights, result.optimalArrangement, startTime, success, `${selectedPattern}-ILP`);
+  };
+
+  const handleStartPatternCreation = () => {
+    setIsCreatingPattern(true);
+    setNewPatternName('');
+    setNewPatternOrder([]);
+  };
+
+  const handleAddPositionToPattern = (position: string) => {
+    if (!newPatternOrder.includes(position)) {
+      setNewPatternOrder([...newPatternOrder, position]);
+    }
+  };
+
+  const handleRemovePositionFromPattern = (position: string) => {
+    setNewPatternOrder(newPatternOrder.filter(p => p !== position));
+  };
+
+  const handleTogglePosition = (position: string) => {
+    if (newPatternOrder.includes(position)) {
+      handleRemovePositionFromPattern(position);
+    } else {
+      handleAddPositionToPattern(position);
+    }
+  };
+
+  const handleDragStart = (e: React.DragEvent, position: string, index: number) => {
+    e.dataTransfer.setData('text/plain', JSON.stringify({ position, index }));
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    const dragData = JSON.parse(e.dataTransfer.getData('text/plain'));
+    const { position, index: sourceIndex } = dragData;
+    
+    if (sourceIndex !== targetIndex) {
+      const newOrder = [...newPatternOrder];
+      // Remove from source position
+      newOrder.splice(sourceIndex, 1);
+      // Insert at target position (adjust if dragging forward)
+      const insertIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+      newOrder.splice(insertIndex, 0, position);
+      setNewPatternOrder(newOrder);
+    }
+  };
+
+  const handleDropBetween = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    const dragData = JSON.parse(e.dataTransfer.getData('text/plain'));
+    const { position, index: sourceIndex } = dragData;
+    
+    if (sourceIndex !== targetIndex) {
+      const newOrder = [...newPatternOrder];
+      // Remove from source position
+      newOrder.splice(sourceIndex, 1);
+      // Insert at target position
+      const insertIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+      newOrder.splice(insertIndex, 0, position);
+      setNewPatternOrder(newOrder);
+    }
+  };
+
+
+  const handleSavePattern = async () => {
+    if (newPatternName.trim() && newPatternOrder.length > 0) {
+      // Save to local state
+      const updatedPatterns = {
+        ...customPatterns,
+        [newPatternName.trim()]: [...newPatternOrder]
+      };
+      setCustomPatterns(updatedPatterns);
+      
+      // Save to database
+      try {
+        await savePattern({
+          name: newPatternName.trim(),
+          sequence: [...newPatternOrder],
+          created_at: new Date(),
+          used_count: 0,
+          success_rate: 0,
+          avg_final_cg: 0,
+          avg_optimization_time: 0,
+          rating: 3, // Default rating
+          tags: ['custom', 'user-created'],
+          notes: 'User-created custom pattern'
+        });
+      } catch (error) {
+        console.error('Failed to save pattern to database:', error);
+      }
+      
+      setIsCreatingPattern(false);
+      setNewPatternName('');
+      setNewPatternOrder([]);
+    }
+  };
+
+  const handleCancelPatternCreation = () => {
+    setIsCreatingPattern(false);
+    setNewPatternName('');
+    setNewPatternOrder([]);
+  };
+
+  const getAllPatterns = () => {
+    // Combine built-in patterns, local custom patterns, and database patterns
+    const dbPatternMap = dbPatterns.reduce((acc, pattern) => {
+      acc[pattern.name] = pattern.sequence;
+      return acc;
+    }, {} as {[key: string]: string[]});
+    
+    return { ...LOADING_PATTERNS, ...customPatterns, ...dbPatternMap };
+  };
+
+  // Pallet style management functions
+  const handleStartPalletCreation = () => {
+    setIsCreatingPallet(true);
+    setNewPalletName('');
+    setNewPalletDescription('');
+    setNewPalletMaxWeight(0);
+    setNewPalletDimensions('');
+    setNewPalletMomentMultiplier(1.0);
+    setNewPalletCategory('Container');
+  };
+
+  const handleSavePallet = async () => {
+    if (newPalletName.trim() && newPalletDescription.trim()) {
+      // Save to local state
+      const updatedPallets = {
+        ...customPalletStyles,
+        [newPalletName.trim()]: {
+          description: newPalletDescription.trim(),
+          maxWeight: newPalletMaxWeight,
+          dimensions: newPalletDimensions.trim(),
+          momentMultiplier: newPalletMomentMultiplier,
+          category: newPalletCategory
+        }
+      };
+      setCustomPalletStyles(updatedPallets);
+      
+      // Save to database
+      try {
+        await saveCustomPalletStyle({
+          name: newPalletName.trim(),
+          description: newPalletDescription.trim(),
+          max_weight: newPalletMaxWeight,
+          dimensions: newPalletDimensions.trim(),
+          moment_multiplier: newPalletMomentMultiplier,
+          category: newPalletCategory,
+          created_at: new Date(),
+          used_count: 0,
+          notes: 'User-created custom pallet style'
+        });
+      } catch (error) {
+        console.error('Failed to save pallet style to database:', error);
+      }
+      
+      setIsCreatingPallet(false);
+      handleCancelPalletCreation();
+    }
+  };
+
+  const handleCancelPalletCreation = () => {
+    setIsCreatingPallet(false);
+    setNewPalletName('');
+    setNewPalletDescription('');
+    setNewPalletMaxWeight(0);
+    setNewPalletDimensions('');
+    setNewPalletMomentMultiplier(1.0);
+    setNewPalletCategory('Container');
+  };
+
+  const handleCopyFromBoeing = (boeingType: string) => {
+    const spec = BOEING_PALLET_SPECS[boeingType as keyof typeof BOEING_PALLET_SPECS];
+    if (spec) {
+      setNewPalletName(boeingType);
+      setNewPalletDescription(spec.description);
+      setNewPalletMaxWeight(spec.maxWeight);
+      setNewPalletDimensions(spec.dimensions);
+      setNewPalletMomentMultiplier(spec.momentMultiplier);
+      setNewPalletCategory(spec.category);
+    }
+  };
+
+  // Custom pallet position management functions
+  const handleStartPositionCreation = () => {
+    setIsCreatingPosition(true);
+    setNewPositionCode('');
+    setNewPositionName('');
+    setNewPositionMomentArm(0);
+    setNewPositionPalletType('LD3');
+  };
+
+  const handleSavePosition = async () => {
+    if (newPositionCode.trim() && newPositionName.trim() && newPositionMomentArm > 0) {
+      // Save to local state
+      const updatedPositions = {
+        ...customPalletPositions,
+        [newPositionCode.trim()]: {
+          name: newPositionName.trim(),
+          momentArm: newPositionMomentArm,
+          palletType: newPositionPalletType
+        }
+      };
+      setCustomPalletPositions(updatedPositions);
+      
+      // Save to database
+      try {
+        await saveCustomPosition({
+          code: newPositionCode.trim(),
+          name: newPositionName.trim(),
+          moment_arm: newPositionMomentArm,
+          pallet_type: newPositionPalletType,
+          created_at: new Date(),
+          used_count: 0,
+          notes: 'User-created custom position'
+        });
+      } catch (error) {
+        console.error('Failed to save custom position to database:', error);
+      }
+      
+      setIsCreatingPosition(false);
+      handleCancelPositionCreation();
+    }
+  };
+
+  const handleCancelPositionCreation = () => {
+    setIsCreatingPosition(false);
+    setNewPositionCode('');
+    setNewPositionName('');
+    setNewPositionMomentArm(0);
+    setNewPositionPalletType('LD3');
+  };
+
+  const getAllCustomPositions = () => {
+    // Combine built-in positions, local custom positions, and database positions
+    const dbPositionMap = dbCustomPositions.reduce((acc, position) => {
+      acc[position.code] = {
+        name: position.name,
+        momentArm: position.moment_arm,
+        palletType: position.pallet_type
+      };
+      return acc;
+    }, {} as {[key: string]: {name: string; momentArm: number; palletType: string}});
+    
+    return { ...CUSTOM_PALLET_POSITIONS, ...customPalletPositions, ...dbPositionMap };
+  };
+
+  // Database helper functions
+  const trackOptimization = async (
+    method: 'manual' | 'basic' | 'PSO' | 'ILP',
+    initialWeights: WeightData[],
+    finalWeights: WeightData[],
+    startTime: number,
+    success: boolean,
+    patternName: string
+  ) => {
+    const endTime = Date.now();
+    const optimizationTime = endTime - startTime;
+    
+    // Find or create pattern in database
+    let patternId = dbPatterns.find(p => p.name === patternName)?.id;
+    if (!patternId) {
+      patternId = await savePattern({
+        name: patternName,
+        sequence: getAllPatterns()[selectedPattern],
+        created_at: new Date(),
+        used_count: 0,
+        success_rate: 0,
+        avg_final_cg: 0,
+        avg_optimization_time: 0,
+        rating: 3,
+        tags: [method, variant],
+        notes: `Auto-created pattern from ${method} optimization`
+      });
+    }
+
+    // Calculate initial and final CG
+    const initialResults = calculateCumulativeWeights(initialWeights, variant);
+    const finalResults = calculateCumulativeWeights(finalWeights, variant);
+    
+    const initialCG = initialResults.loadingPoints[initialResults.loadingPoints.length - 1]?.cg || 0;
+    const finalCG = finalResults.loadingPoints[finalResults.loadingPoints.length - 1]?.cg || 0;
+    
+    // Count envelope violations
+    const envelopeViolations = finalResults.loadingPoints.filter(
+      point => !isPointInEnvelope(point.cg, point.weight)
+    ).length;
+
+    // Save optimization history
+    await saveOptimization({
+      pattern_id: patternId,
+      aircraft_variant: variant,
+      method,
+      initial_weights: initialWeights,
+      final_weights: finalWeights,
+      initial_cg: initialCG,
+      final_cg: finalCG,
+      optimization_time: optimizationTime,
+      envelope_violations: envelopeViolations,
+      success,
+      created_at: new Date(),
+      fuel_weight: fuelWeight,
+      total_weight: finalResults.loadingPoints[finalResults.loadingPoints.length - 1]?.weight || 0,
+      cg_improvement: Math.abs(finalCG - initialCG),
+      notes: `${method} optimization ${success ? 'successful' : 'failed'}`
+    });
+
+    // Update pattern ranking
+    await updateRanking(patternId);
+  };
+
+  // const getAllPalletStyles = () => {
+  //   return { ...BOEING_PALLET_SPECS, ...customPalletStyles };
+  // };
 
   const calculateOpportunityWindow = (weights: WeightData[]): LoadingPoint[] => {
     if (weights.length === 0) return [];
 
-    const pattern = LOADING_PATTERNS[selectedPattern as keyof typeof LOADING_PATTERNS];
+    const allPatterns = getAllPatterns();
+    const pattern = allPatterns[selectedPattern] || LOADING_PATTERNS.default;
     const totalWeight = weights.reduce((sum, w) => sum + w.weight, 0);
     if (totalWeight === 0) return [];
 
@@ -307,7 +760,8 @@ export default function WeightCalculator() {
     const currentWeights = testWeights.length > 0 ? testWeights : [];
     if (currentWeights.length === 0) return;
 
-    const pattern = LOADING_PATTERNS[selectedPattern as keyof typeof LOADING_PATTERNS];
+    const allPatterns = getAllPatterns();
+    const pattern = allPatterns[selectedPattern] || LOADING_PATTERNS.default;
     let bestWeights = [...currentWeights];
     let bestCG = direction === 'forward' ? -Infinity : Infinity;
 
@@ -371,15 +825,15 @@ export default function WeightCalculator() {
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-96 lg:w-96 md:w-80 sm:w-72'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 relative min-w-16`}>
+      <div className={`${sidebarCollapsed ? 'w-16' : 'w-full max-w-80 lg:w-80 md:w-72 sm:w-64'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 relative min-w-16`}>
         {/* Header */}
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="p-2 sm:p-4 border-b border-gray-200 flex items-center justify-between">
           {!sidebarCollapsed && (
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">777 Weight & Balance</h1>
+            <div className="flex-1 mr-2 min-w-0">
+              <h1 className="text-sm sm:text-base md:text-lg lg:text-xl font-bold text-gray-900 truncate">777 Weight & Balance</h1>
               
               {/* Aircraft Variant Selection */}
-              <div className="flex gap-2 mt-3">
+              <div className="flex gap-1 sm:gap-2 mt-2 sm:mt-3">
             <Button
               onClick={() => {
                 setVariant('300ER');
@@ -392,8 +846,9 @@ export default function WeightCalculator() {
               }}
               variant={variant === '300ER' ? 'default' : 'outline'}
               size="sm"
+              className="text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2 flex-1"
             >
-              777-300ER
+              <span className="hidden sm:inline">777-</span>300ER
             </Button>
             <Button
               onClick={() => {
@@ -407,8 +862,9 @@ export default function WeightCalculator() {
               }}
               variant={variant === '200LR' ? 'default' : 'outline'}
               size="sm"
+              className="text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2 flex-1"
             >
-              777-200LR
+              <span className="hidden sm:inline">777-</span>200LR
             </Button>
               </div>
             </div>
@@ -419,7 +875,7 @@ export default function WeightCalculator() {
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             variant="ghost"
             size="sm"
-            className="p-2"
+            className="p-1 sm:p-2 flex-shrink-0"
           >
             {sidebarCollapsed ? '→' : '←'}
           </Button>
@@ -427,7 +883,7 @@ export default function WeightCalculator() {
 
         {/* Controls */}
         {!sidebarCollapsed && (
-          <div className="p-4 border-b border-gray-200 space-y-3">
+          <div className="p-2 sm:p-4 border-b border-gray-200 space-y-2 sm:space-y-3">
           <div>
             <label className="text-sm font-medium text-gray-700 mb-2 block">Loading Pattern</label>
             <select
@@ -450,7 +906,28 @@ export default function WeightCalculator() {
               <option value="forward">Forward Loading</option>
               <option value="aft">Aft Loading</option>
               <option value="balanced">Balanced Loading</option>
+              {Object.keys(customPatterns).map(patternName => (
+                <option key={patternName} value={patternName}>
+                  {patternName} (Custom)
+                </option>
+              ))}
+              {dbPatterns.map(pattern => (
+                <option key={pattern.name} value={pattern.name}>
+                  {pattern.name} (DB - ⭐{pattern.rating})
+                </option>
+              ))}
             </select>
+          </div>
+
+          <div className="mb-2 sm:mb-3">
+            <Button
+              onClick={handleStartPatternCreation}
+              variant="outline"
+              size="sm"
+              className="w-full bg-purple-50 hover:bg-purple-100 text-xs sm:text-sm"
+            >
+              Create Custom Pattern
+            </Button>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
@@ -458,7 +935,7 @@ export default function WeightCalculator() {
               onClick={handleTestFill}
               variant="outline"
               size="sm"
-              className="bg-blue-50 hover:bg-blue-100"
+              className="bg-blue-50 hover:bg-blue-100 text-xs sm:text-sm"
             >
               Test Fill
             </Button>
@@ -466,7 +943,7 @@ export default function WeightCalculator() {
               onClick={handleOptimize}
               variant="outline"
               size="sm"
-              className="bg-green-50 hover:bg-green-100"
+              className="bg-green-50 hover:bg-green-100 text-xs sm:text-sm"
               disabled={tableData.length === 0}
             >
               Optimize
@@ -475,10 +952,31 @@ export default function WeightCalculator() {
 
           <div className="grid grid-cols-2 gap-2">
             <Button
+              onClick={handleOptimizePSO}
+              variant="outline"
+              size="sm"
+              className="bg-red-50 hover:bg-red-100 text-xs sm:text-sm"
+              disabled={tableData.length === 0}
+            >
+              PSO
+            </Button>
+            <Button
+              onClick={handleOptimizeILP}
+              variant="outline"
+              size="sm"
+              className="bg-indigo-50 hover:bg-indigo-100 text-xs sm:text-sm"
+              disabled={tableData.length === 0}
+            >
+              ILP
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Button
               onClick={() => handleOpportunitySelect('forward')}
               variant="outline"
               size="sm"
-              className="bg-purple-50 hover:bg-purple-100"
+              className="bg-purple-50 hover:bg-purple-100 text-xs sm:text-sm"
               disabled={opportunityWindow.length === 0}
             >
               Max Fwd CG
@@ -487,7 +985,7 @@ export default function WeightCalculator() {
               onClick={() => handleOpportunitySelect('aft')}
               variant="outline"
               size="sm"
-              className="bg-orange-50 hover:bg-orange-100"
+              className="bg-orange-50 hover:bg-orange-100 text-xs sm:text-sm"
               disabled={opportunityWindow.length === 0}
             >
               Max Aft CG
@@ -498,13 +996,13 @@ export default function WeightCalculator() {
 
         {/* Scrollable Loading Grid */}
         {!sidebarCollapsed && (
-          <div className="flex-1 overflow-hidden">
-          <div className="h-full overflow-y-auto p-4">
+          <div className="flex-1 overflow-hidden bg-white">
+          <div className="h-full overflow-y-auto p-2 sm:p-4">
             <LoadingGrid 
               key={selectedPattern}
               onWeightChange={handleCompute} 
               onFuelLoad={handleFuelLoad}
-              loadingSequence={[...LOADING_PATTERNS[selectedPattern as keyof typeof LOADING_PATTERNS]]}
+              loadingSequence={[...getAllPatterns()[selectedPattern as keyof ReturnType<typeof getAllPatterns>]]}
               initialWeights={testWeights}
             />
           </div>
@@ -521,6 +1019,10 @@ export default function WeightCalculator() {
               <TabsList className="bg-transparent">
                 <TabsTrigger value="chart">CG Envelope Chart</TabsTrigger>
                 <TabsTrigger value="data">Loading Data</TabsTrigger>
+                <TabsTrigger value="patterns">Pattern Creator</TabsTrigger>
+                <TabsTrigger value="pallets">Pallet Styles</TabsTrigger>
+                <TabsTrigger value="positions">Custom Positions</TabsTrigger>
+                <TabsTrigger value="analytics">Analytics</TabsTrigger>
               </TabsList>
             </div>
 
@@ -563,12 +1065,569 @@ export default function WeightCalculator() {
                   </CardContent>
                 </Card>
               </TabsContent>
+
+              <TabsContent value="patterns" className="h-full mt-0">
+                <Card className="h-full">
+                  <CardContent className="h-full p-4 overflow-auto">
+                    {isCreatingPattern ? (
+                      <div className="space-y-4">
+                        <div className="border-b pb-4">
+                          <h3 className="text-lg font-bold text-gray-900 mb-2">Create Custom Loading Pattern</h3>
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">Pattern Name</label>
+                              <input
+                                type="text"
+                                className="w-full px-3 py-2 border rounded-md text-sm"
+                                placeholder="Enter pattern name..."
+                                value={newPatternName}
+                                onChange={(e) => setNewPatternName(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <h4 className="text-md font-medium text-gray-900">Current Loading Order</h4>
+                              {newPatternOrder.length > 0 && (
+                                <button
+                                  onClick={() => setNewPatternOrder([])}
+                                  className="text-xs text-red-600 hover:text-red-800 underline"
+                                  title="Clear all positions"
+                                >
+                                  Clear All
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-600 mb-3">
+                              Click positions below to add/remove • Drag positions to reorder • Hover over drop zones to insert
+                            </p>
+                            {newPatternOrder.length === 0 ? (
+                              <p className="text-gray-500 text-sm">No positions selected. Click positions below to add them.</p>
+                            ) : (
+                              <div className="border rounded-md p-3 bg-gray-50">
+                                <div className="flex flex-wrap gap-1">
+                                  {/* Drop zone at the beginning */}
+                                  <div
+                                    onDragOver={handleDragOver}
+                                    onDrop={(e) => handleDropBetween(e, 0)}
+                                    className="w-2 h-8 rounded border-2 border-dashed border-transparent hover:border-blue-400 transition-colors"
+                                    title="Drop here to insert at beginning"
+                                  />
+                                  
+                                  {newPatternOrder.map((position, index) => (
+                                    <React.Fragment key={`${position}-${index}`}>
+                                      <div
+                                        draggable
+                                        onDragStart={(e) => handleDragStart(e, position, index)}
+                                        onDragOver={handleDragOver}
+                                        onDrop={(e) => handleDrop(e, index)}
+                                        className="flex items-center bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs cursor-move hover:bg-blue-200 transition-colors shadow-sm"
+                                        title="Drag to reorder"
+                                      >
+                                        <span className="mr-1 text-blue-600">#{index + 1}</span>
+                                        <span className="font-mono font-bold">{position}</span>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleRemovePositionFromPattern(position);
+                                          }}
+                                          className="ml-2 text-blue-600 hover:text-blue-800 font-bold"
+                                          title="Remove position"
+                                        >
+                                          ×
+                                        </button>
+                                      </div>
+                                      
+                                      {/* Drop zone after each position */}
+                                      <div
+                                        onDragOver={handleDragOver}
+                                        onDrop={(e) => handleDropBetween(e, index + 1)}
+                                        className="w-2 h-8 rounded border-2 border-dashed border-transparent hover:border-blue-400 transition-colors"
+                                        title="Drop here to insert after this position"
+                                      />
+                                    </React.Fragment>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <div>
+                            <h4 className="text-md font-medium text-gray-900 mb-2">Available Positions</h4>
+                            <p className="text-xs text-gray-600 mb-3">
+                              Click to add/remove from loading order • Blue = selected, White = available
+                            </p>
+                            <div className="border rounded-md p-3">
+                              <div className="grid grid-cols-6 gap-2">
+                                {Object.keys(POSITION_MAP).map((position) => (
+                                  <button
+                                    key={position}
+                                    onClick={() => handleTogglePosition(position)}
+                                    className={`px-2 py-1 text-xs rounded font-mono border transition-all duration-200 transform hover:scale-105 ${
+                                      newPatternOrder.includes(position)
+                                        ? 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200 cursor-pointer shadow-md'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 cursor-pointer shadow-sm hover:shadow-md'
+                                    }`}
+                                    title={newPatternOrder.includes(position) ? 'Click to remove from pattern' : 'Click to add to pattern'}
+                                  >
+                                    {position}
+                                    {newPatternOrder.includes(position) && (
+                                      <span className="ml-1 text-blue-600 font-bold">
+                                        #{newPatternOrder.indexOf(position) + 1}
+                                      </span>
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            
+                            <div className="mt-3 text-xs text-gray-500">
+                              <p>💡 <strong>Tips:</strong></p>
+                              <ul className="mt-1 space-y-1 list-disc list-inside">
+                                <li>Click any position to add/remove it from the pattern</li>
+                                <li>Drag positions in the loading order to rearrange them</li>
+                                <li>Numbers show the loading sequence order</li>
+                                <li>Use "Clear All" to start over</li>
+                              </ul>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 pt-4 border-t">
+                            <Button
+                              onClick={handleSavePattern}
+                              variant="default"
+                              size="sm"
+                              disabled={!newPatternName.trim() || newPatternOrder.length === 0}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              Save Pattern
+                            </Button>
+                            <Button
+                              onClick={handleCancelPatternCreation}
+                              variant="outline"
+                              size="sm"
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="text-center py-8">
+                          <h3 className="text-lg font-bold text-gray-900 mb-2">Pattern Creator</h3>
+                          <p className="text-gray-600 mb-4">Create custom loading patterns for your cargo operations</p>
+                          <Button
+                            onClick={handleStartPatternCreation}
+                            variant="default"
+                            className="bg-purple-600 hover:bg-purple-700"
+                          >
+                            Start Creating Pattern
+                          </Button>
+                        </div>
+
+                        {Object.keys(customPatterns).length > 0 && (
+                          <div className="border-t pt-4">
+                            <h4 className="text-md font-medium text-gray-900 mb-3">Existing Custom Patterns</h4>
+                            <div className="space-y-2">
+                              {Object.entries(customPatterns).map(([name, pattern]) => (
+                                <div key={name} className="border rounded-md p-3 bg-gray-50">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <h5 className="font-medium text-gray-900">{name}</h5>
+                                    <span className="text-xs text-gray-500">{pattern.length} positions</span>
+                                  </div>
+                                  <div className="text-xs text-gray-600 font-mono">
+                                    {pattern.slice(0, 10).join(' → ')}
+                                    {pattern.length > 10 && ' ...'}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="pallets" className="h-full mt-0">
+                <Card className="h-full">
+                  <CardContent className="h-full p-4 overflow-auto">
+                    {isCreatingPallet ? (
+                      <div className="space-y-4">
+                        <div className="border-b pb-4">
+                          <h3 className="text-lg font-bold text-gray-900 mb-2">Create Custom Pallet Style</h3>
+                          <p className="text-sm text-gray-600 mb-4">Define a new pallet type with Boeing specifications</p>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">Pallet Code</label>
+                              <input
+                                type="text"
+                                className="w-full px-3 py-2 border rounded-md text-sm"
+                                placeholder="e.g., LD3, PMC, Custom1"
+                                value={newPalletName}
+                                onChange={(e) => setNewPalletName(e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">Category</label>
+                              <select
+                                className="w-full px-3 py-2 border rounded-md text-sm"
+                                value={newPalletCategory}
+                                onChange={(e) => setNewPalletCategory(e.target.value)}
+                              >
+                                <option value="Container">Container</option>
+                                <option value="Lower Deck">Lower Deck</option>
+                                <option value="Main Deck">Main Deck</option>
+                                <option value="Bulk">Bulk</option>
+                                <option value="Special">Special</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1 block">Description</label>
+                            <input
+                              type="text"
+                              className="w-full px-3 py-2 border rounded-md text-sm"
+                              placeholder="e.g., LD3 Container, Custom Pallet Type"
+                              value={newPalletDescription}
+                              onChange={(e) => setNewPalletDescription(e.target.value)}
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-4">
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">Max Weight (lbs)</label>
+                              <input
+                                type="number"
+                                className="w-full px-3 py-2 border rounded-md text-sm"
+                                placeholder="3500"
+                                value={newPalletMaxWeight || ''}
+                                onChange={(e) => setNewPalletMaxWeight(Number(e.target.value))}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">Moment Multiplier</label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                className="w-full px-3 py-2 border rounded-md text-sm"
+                                placeholder="1.0"
+                                value={newPalletMomentMultiplier || ''}
+                                onChange={(e) => setNewPalletMomentMultiplier(Number(e.target.value))}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">Dimensions</label>
+                              <input
+                                type="text"
+                                className="w-full px-3 py-2 border rounded-md text-sm"
+                                placeholder='88" x 125" x 64"'
+                                value={newPalletDimensions}
+                                onChange={(e) => setNewPalletDimensions(e.target.value)}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="border-t pt-4">
+                            <h4 className="text-sm font-medium text-gray-700 mb-3">Quick Copy from Boeing Standards</h4>
+                            <div className="grid grid-cols-4 gap-2">
+                              {Object.keys(BOEING_PALLET_SPECS).map((boeingType) => (
+                                <button
+                                  key={boeingType}
+                                  onClick={() => handleCopyFromBoeing(boeingType)}
+                                  className="px-2 py-1 text-xs rounded border bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                >
+                                  {boeingType}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 pt-4 border-t">
+                            <Button
+                              onClick={handleSavePallet}
+                              variant="default"
+                              size="sm"
+                              disabled={!newPalletName.trim() || !newPalletDescription.trim()}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              Save Pallet Style
+                            </Button>
+                            <Button
+                              onClick={handleCancelPalletCreation}
+                              variant="outline"
+                              size="sm"
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="text-center py-8">
+                          <h3 className="text-lg font-bold text-gray-900 mb-2">Pallet Style Manager</h3>
+                          <p className="text-gray-600 mb-4">Manage Boeing standard and custom pallet specifications</p>
+                          <Button
+                            onClick={handleStartPalletCreation}
+                            variant="default"
+                            className="bg-blue-600 hover:bg-blue-700"
+                          >
+                            Create Custom Pallet Style
+                          </Button>
+                        </div>
+
+                        <div className="border-t pt-4">
+                          <h4 className="text-md font-medium text-gray-900 mb-3">Boeing Standard Pallet Specifications</h4>
+                          <div className="space-y-2">
+                            {Object.entries(BOEING_PALLET_SPECS).map(([code, spec]) => (
+                              <div key={code} className="border rounded-md p-3 bg-blue-50">
+                                <div className="flex justify-between items-start mb-2">
+                                  <div className="flex items-center gap-3">
+                                    <h5 className="font-bold text-blue-900">{code}</h5>
+                                    <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded">{spec.category}</span>
+                                  </div>
+                                  <span className="text-xs text-blue-600">Max: {spec.maxWeight.toLocaleString()} lbs</span>
+                                </div>
+                                <p className="text-sm text-blue-800 mb-1">{spec.description}</p>
+                                <div className="text-xs text-blue-600 flex gap-4">
+                                  <span>Dimensions: {spec.dimensions}</span>
+                                  <span>Moment Multiplier: {spec.momentMultiplier}x</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {(Object.keys(customPalletStyles).length > 0 || dbCustomPalletStyles.length > 0) && (
+                          <div className="border-t pt-4">
+                            <h4 className="text-md font-medium text-gray-900 mb-3">Custom Pallet Styles</h4>
+                            <div className="space-y-2">
+                              {Object.entries(customPalletStyles).map(([code, spec]) => (
+                                <div key={code} className="border rounded-md p-3 bg-gray-50">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div className="flex items-center gap-3">
+                                      <h5 className="font-bold text-gray-900">{code}</h5>
+                                      <span className="text-xs bg-gray-200 text-gray-800 px-2 py-1 rounded">{spec.category}</span>
+                                      <span className="text-xs bg-green-200 text-green-800 px-2 py-1 rounded">Local</span>
+                                    </div>
+                                    <span className="text-xs text-gray-600">Max: {spec.maxWeight.toLocaleString()} lbs</span>
+                                  </div>
+                                  <p className="text-sm text-gray-800 mb-1">{spec.description}</p>
+                                  <div className="text-xs text-gray-600 flex gap-4">
+                                    <span>Dimensions: {spec.dimensions}</span>
+                                    <span>Moment Multiplier: {spec.momentMultiplier}x</span>
+                                  </div>
+                                </div>
+                              ))}
+                              {dbCustomPalletStyles.map((style) => (
+                                <div key={style.id} className="border rounded-md p-3 bg-blue-50">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div className="flex items-center gap-3">
+                                      <h5 className="font-bold text-blue-900">{style.name}</h5>
+                                      <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded">{style.category}</span>
+                                      <span className="text-xs bg-purple-200 text-purple-800 px-2 py-1 rounded">Database</span>
+                                    </div>
+                                    <span className="text-xs text-blue-600">Max: {style.max_weight.toLocaleString()} lbs</span>
+                                  </div>
+                                  <p className="text-sm text-blue-800 mb-1">{style.description}</p>
+                                  <div className="text-xs text-blue-600 flex gap-4">
+                                    <span>Dimensions: {style.dimensions}</span>
+                                    <span>Moment Multiplier: {style.moment_multiplier}x</span>
+                                    <span>Used: {style.used_count} times</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="positions" className="h-full mt-0">
+                <Card className="h-full">
+                  <CardContent className="h-full p-4 overflow-auto">
+                    {isCreatingPosition ? (
+                      <div className="space-y-4">
+                        <div className="border-b pb-4">
+                          <h3 className="text-lg font-bold text-gray-900 mb-2">Create Custom Pallet Position</h3>
+                          <p className="text-sm text-gray-600 mb-4">Define a new pallet position with custom name and moment arm</p>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">Position Code</label>
+                              <input
+                                type="text"
+                                className="w-full px-3 py-2 border rounded-md text-sm"
+                                placeholder="e.g., CP4, CUSTOM1"
+                                value={newPositionCode}
+                                onChange={(e) => setNewPositionCode(e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">Pallet Type</label>
+                              <select
+                                className="w-full px-3 py-2 border rounded-md text-sm"
+                                value={newPositionPalletType}
+                                onChange={(e) => setNewPositionPalletType(e.target.value)}
+                              >
+                                {Object.keys(BOEING_PALLET_SPECS).map((type) => (
+                                  <option key={type} value={type}>{type}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1 block">Position Name</label>
+                            <input
+                              type="text"
+                              className="w-full px-3 py-2 border rounded-md text-sm"
+                              placeholder="e.g., Forward Cargo Bay 1, Aft Lower Deck"
+                              value={newPositionName}
+                              onChange={(e) => setNewPositionName(e.target.value)}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1 block">Moment Arm (inches)</label>
+                            <input
+                              type="number"
+                              className="w-full px-3 py-2 border rounded-md text-sm"
+                              placeholder="e.g., 1250"
+                              value={newPositionMomentArm || ''}
+                              onChange={(e) => setNewPositionMomentArm(Number(e.target.value))}
+                            />
+                          </div>
+
+                          <div className="flex gap-2 pt-4 border-t">
+                            <Button
+                              onClick={handleSavePosition}
+                              variant="default"
+                              size="sm"
+                              disabled={!newPositionCode.trim() || !newPositionName.trim() || newPositionMomentArm <= 0}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              Save Position
+                            </Button>
+                            <Button
+                              onClick={handleCancelPositionCreation}
+                              variant="outline"
+                              size="sm"
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="text-center py-8">
+                          <h3 className="text-lg font-bold text-gray-900 mb-2">Custom Pallet Position Manager</h3>
+                          <p className="text-gray-600 mb-4">Create custom pallet positions with specific names and moment arms</p>
+                          <Button
+                            onClick={handleStartPositionCreation}
+                            variant="default"
+                            className="bg-purple-600 hover:bg-purple-700"
+                          >
+                            Create Custom Position
+                          </Button>
+                        </div>
+
+                        <div className="border-t pt-4">
+                          <h4 className="text-md font-medium text-gray-900 mb-3">Default Custom Positions</h4>
+                          <div className="space-y-2">
+                            {Object.entries(CUSTOM_PALLET_POSITIONS).map(([code, pos]) => (
+                              <div key={code} className="border rounded-md p-3 bg-blue-50">
+                                <div className="flex justify-between items-start mb-2">
+                                  <div className="flex items-center gap-3">
+                                    <h5 className="font-bold text-blue-900">{code}</h5>
+                                    <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded">{pos.palletType}</span>
+                                  </div>
+                                  <span className="text-xs text-blue-600">Arm: {pos.momentArm}"</span>
+                                </div>
+                                <p className="text-sm text-blue-800">{pos.name}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {(Object.keys(customPalletPositions).length > 0 || dbCustomPositions.length > 0) && (
+                          <div className="border-t pt-4">
+                            <h4 className="text-md font-medium text-gray-900 mb-3">Your Custom Positions</h4>
+                            <div className="space-y-2">
+                              {Object.entries(customPalletPositions).map(([code, pos]) => (
+                                <div key={code} className="border rounded-md p-3 bg-gray-50">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div className="flex items-center gap-3">
+                                      <h5 className="font-bold text-gray-900">{code}</h5>
+                                      <span className="text-xs bg-gray-200 text-gray-800 px-2 py-1 rounded">{pos.palletType}</span>
+                                      <span className="text-xs bg-green-200 text-green-800 px-2 py-1 rounded">Local</span>
+                                    </div>
+                                    <span className="text-xs text-gray-600">Arm: {pos.momentArm}"</span>
+                                  </div>
+                                  <p className="text-sm text-gray-800">{pos.name}</p>
+                                </div>
+                              ))}
+                              {dbCustomPositions.map((position) => (
+                                <div key={position.id} className="border rounded-md p-3 bg-blue-50">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div className="flex items-center gap-3">
+                                      <h5 className="font-bold text-blue-900">{position.code}</h5>
+                                      <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded">{position.pallet_type}</span>
+                                      <span className="text-xs bg-purple-200 text-purple-800 px-2 py-1 rounded">Database</span>
+                                    </div>
+                                    <span className="text-xs text-blue-600">Arm: {position.moment_arm}"</span>
+                                  </div>
+                                  <p className="text-sm text-blue-800">{position.name}</p>
+                                  <p className="text-xs text-blue-600 mt-1">Used: {position.used_count} times</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="analytics" className="h-full mt-0">
+                <Card className="h-full">
+                  <CardContent className="h-full p-4 overflow-auto">
+                    <AnalyticsDashboard 
+                      onSelectPattern={(patternId) => {
+                        // Find pattern by ID and switch to it
+                        const pattern = dbPatterns.find(p => p.id === patternId);
+                        if (pattern) {
+                          console.log('Selected pattern:', pattern.name);
+                          // Could implement pattern switching here
+                        }
+                      }}
+                    />
+                  </CardContent>
+                </Card>
+              </TabsContent>
             </div>
           </Tabs>
         </div>
 
         {/* Right Summary Panel */}
-        <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
+        <div className="hidden sm:flex w-72 xl:w-80 lg:w-72 md:w-64 sm:w-56 bg-white border-l border-gray-200 flex-col">
           <div className="p-4 border-b border-gray-200">
             <h2 className="text-lg font-bold text-gray-900">Summary</h2>
           </div>
