@@ -3,12 +3,14 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DEFAULT_LOADING_SEQUENCE } from '@/lib/constants';
+import { convertWeight, getWeightUnit } from '@/lib/units';
 
 interface LoadingGridProps {
   onWeightChange: (weights: Array<{ weight: number; position: string }>) => void;
   onFuelLoad?: (fuelWeight: number) => void;
   loadingSequence?: string[];
   initialWeights?: Array<{ weight: number; position: string }>;
+  units?: 'LB' | 'KG';
 }
 
 
@@ -16,13 +18,15 @@ export function LoadingGrid({
   onWeightChange, 
   onFuelLoad, 
   loadingSequence = [...DEFAULT_LOADING_SEQUENCE],
-  initialWeights
+  initialWeights,
+  units = 'LB'
 }: LoadingGridProps) {
   const [weights, setWeights] = useState<Array<{ weight: number; position: string }>>(() => {
     if (initialWeights && initialWeights.length > 0) {
       return initialWeights;
     }
-    return [{ weight: 500, position: loadingSequence[0] }];
+    // Default weight always stored in pounds
+    return [{ weight: 6000, position: loadingSequence[0] }];
   });
   const [fuelWeight, setFuelWeight] = useState<number>(0);
 
@@ -46,6 +50,7 @@ export function LoadingGrid({
     }
     
     const nextPosition = loadingSequence[weights.length];
+    // Always store weights internally in pounds
     const newWeights = [...weights, { weight: 6000, position: nextPosition }];
     setWeights(newWeights);
     onWeightChange(newWeights);
@@ -66,13 +71,15 @@ export function LoadingGrid({
   };
 
   const handleFuelChange = (value: string) => {
-    const newFuelWeight = Number(value) || 0;
-    setFuelWeight(newFuelWeight);
+    const displayValue = Number(value) || 0;
+    // Convert to pounds if needed for internal storage
+    const internalValue = units === 'KG' ? Math.round(displayValue / 0.453592) : displayValue;
+    setFuelWeight(internalValue);
   };
 
   const handleLoadFuel = () => {
     if (onFuelLoad) {
-      onFuelLoad(fuelWeight);
+      onFuelLoad(fuelWeight); // Already in pounds
     }
   };
 
@@ -88,13 +95,18 @@ export function LoadingGrid({
               </div>
               <input
                 type="number"
-                value={weight.weight || ''}
-                onChange={(e) => handleWeightChange(index, e.target.value)}
+                value={convertWeight(weight.weight, units) || ''}
+                onChange={(e) => {
+                  // Convert back to pounds for internal storage
+                  const displayValue = Number(e.target.value) || 0;
+                  const internalValue = units === 'KG' ? Math.round(displayValue / 0.453592) : displayValue;
+                  handleWeightChange(index, internalValue.toString());
+                }}
                 className="flex-1 px-3 py-2 border rounded-md text-center"
                 min={0}
-                max={12000}
-                step={500}
-                placeholder="Enter weight"
+                max={units === 'KG' ? 5440 : 12000} // Adjust max for KG
+                step={units === 'KG' ? 225 : 500}   // Adjust step for KG
+                placeholder={`Weight (${units.toLowerCase()})`}
               />
               <button
                 onClick={() => removeWeight(index)}
@@ -140,17 +152,17 @@ export function LoadingGrid({
               <div className="font-bold text-center mb-4">Fuel Loading</div>
               <div className="flex items-center gap-2">
                 <div className="w-20 text-right text-sm text-gray-500">
-                  Fuel (lb)
+                  Fuel ({getWeightUnit(units)})
                 </div>
                 <input
                   type="number"
-                  value={fuelWeight}
+                  value={convertWeight(fuelWeight, units) || ''}
                   onChange={(e) => handleFuelChange(e.target.value)}
                   className="flex-1 px-3 py-2 border rounded-md text-center"
                   min={0}
-                  max={270000}
-                  step={1000}
-                  placeholder="Enter fuel weight"
+                  max={units === 'KG' ? 122472 : 270000} // Adjust max for KG
+                  step={units === 'KG' ? 450 : 1000}     // Adjust step for KG
+                  placeholder={`Fuel weight (${units.toLowerCase()})`}
                 />
               </div>
               <Button 

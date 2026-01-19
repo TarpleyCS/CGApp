@@ -88,7 +88,7 @@ interface WeightBalanceDB extends DBSchema {
   optimization_history: {
     key: number;
     value: OptimizationHistory;
-    indexes: { 'by-pattern': number; 'by-method': string; 'by-date': Date; 'by-success': boolean };
+    indexes: { 'by-pattern': number; 'by-method': string; 'by-date': number; 'by-success': number };
   };
   pattern_rankings: {
     key: number;
@@ -309,7 +309,13 @@ class WeightBalanceDatabase {
     await this.recalculateRanks();
   }
 
-  private calculatePatternScore(stats: any, pattern: LoadingPattern): number {
+  private calculatePatternScore(stats: {
+    totalUses: number;
+    successRate: number;
+    avgCGImprovement: number;
+    avgOptimizationTime: number;
+    methodDistribution: Record<string, number>;
+  }, pattern: LoadingPattern): number {
     const weights = {
       successRate: 0.3,
       usageCount: 0.2,

@@ -8,6 +8,7 @@ import { AnalyticsDashboard } from './analytics-dashboard';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { convertWeight, getWeightUnit } from '@/lib/units';
 
 // Import shared constants and utilities
 import { OEW_DATA, LOADING_PATTERNS, POSITION_MAP, BOEING_PALLET_SPECS, CUSTOM_PALLET_POSITIONS } from '@/lib/constants';
@@ -35,6 +36,7 @@ import {
 
 export default function WeightCalculator() {
   const [variant, setVariant] = useState<'300ER' | '200LR'>('300ER');
+  const [units, setUnits] = useState<'LB' | 'KG'>('LB');
   const [selectedPattern, setSelectedPattern] = useState('default');
   const [loadingPoints, setLoadingPoints] = useState<LoadingPoint[]>([
     { cg: OEW_DATA[variant].cg, weight: OEW_DATA[variant].weight }
@@ -51,15 +53,15 @@ export default function WeightCalculator() {
   const [isCreatingPattern, setIsCreatingPattern] = useState(false);
   
   // Database hooks
-  const { patterns: dbPatterns, savePattern, ratePattern } = useLoadingPatterns();
+  const { patterns: dbPatterns, savePattern } = useLoadingPatterns();
   const { saveOptimization } = useOptimizationHistory();
   const { updateRanking } = usePatternRankings();
-  const { positions: dbCustomPositions, savePosition: saveCustomPosition, updatePosition: updateCustomPosition } = useCustomPositions();
+  const { positions: dbCustomPositions, savePosition: saveCustomPosition } = useCustomPositions();
   const { styles: dbCustomPalletStyles, saveStyle: saveCustomPalletStyle } = useCustomPalletStyles();
   
-  // Pattern rating state
-  const [patternRatings, setPatternRatings] = useState<{[key: string]: number}>({});
-  const [showRatingDialog, setShowRatingDialog] = useState<string | null>(null);
+  // Pattern rating state - reserved for future use
+  // const [patternRatings, setPatternRatings] = useState<{[key: string]: number}>({});
+  // const [showRatingDialog, setShowRatingDialog] = useState<string | null>(null);
   
   // Pallet style management
   const [customPalletStyles, setCustomPalletStyles] = useState<{[key: string]: {
@@ -122,7 +124,7 @@ export default function WeightCalculator() {
   };
 
   const handleTestFill = () => {
-    const allPatterns = getAllPatterns();
+    const allPatterns = getAllPatterns() as Record<string, readonly string[]>;
     const pattern = allPatterns[selectedPattern] || LOADING_PATTERNS.default;
     const generatedWeights = pattern.map((position) => ({
       position,
@@ -348,7 +350,7 @@ export default function WeightCalculator() {
     handleCompute(result.optimalArrangement);
 
     // Track optimization performance
-    const success = result.converged && result.objectiveValue < 1000;
+    const success = result.feasible && result.optimalValue < 1000;
     await trackOptimization('ILP', initialWeights, result.optimalArrangement, startTime, success, `${selectedPattern}-ILP`);
   };
 
@@ -588,19 +590,18 @@ export default function WeightCalculator() {
     setNewPositionPalletType('LD3');
   };
 
-  const getAllCustomPositions = () => {
-    // Combine built-in positions, local custom positions, and database positions
-    const dbPositionMap = dbCustomPositions.reduce((acc, position) => {
-      acc[position.code] = {
-        name: position.name,
-        momentArm: position.moment_arm,
-        palletType: position.pallet_type
-      };
-      return acc;
-    }, {} as {[key: string]: {name: string; momentArm: number; palletType: string}});
-    
-    return { ...CUSTOM_PALLET_POSITIONS, ...customPalletPositions, ...dbPositionMap };
-  };
+  // Reserved for future use - getAllCustomPositions
+  // const getAllCustomPositions = () => {
+  //   const dbPositionMap = dbCustomPositions.reduce((acc, position) => {
+  //     acc[position.code] = {
+  //       name: position.name,
+  //       momentArm: position.moment_arm,
+  //       palletType: position.pallet_type
+  //     };
+  //     return acc;
+  //   }, {} as {[key: string]: {name: string; momentArm: number; palletType: string}});
+  //   return { ...CUSTOM_PALLET_POSITIONS, ...customPalletPositions, ...dbPositionMap };
+  // };
 
   // Database helper functions
   const trackOptimization = async (
@@ -619,7 +620,7 @@ export default function WeightCalculator() {
     if (!patternId) {
       patternId = await savePattern({
         name: patternName,
-        sequence: getAllPatterns()[selectedPattern],
+        sequence: [...(getAllPatterns() as Record<string, readonly string[]>)[selectedPattern]],
         created_at: new Date(),
         used_count: 0,
         success_rate: 0,
@@ -673,7 +674,7 @@ export default function WeightCalculator() {
   const calculateOpportunityWindow = (weights: WeightData[]): LoadingPoint[] => {
     if (weights.length === 0) return [];
 
-    const allPatterns = getAllPatterns();
+    const allPatterns = getAllPatterns() as Record<string, readonly string[]>;
     const pattern = allPatterns[selectedPattern] || LOADING_PATTERNS.default;
     const totalWeight = weights.reduce((sum, w) => sum + w.weight, 0);
     if (totalWeight === 0) return [];
@@ -760,7 +761,7 @@ export default function WeightCalculator() {
     const currentWeights = testWeights.length > 0 ? testWeights : [];
     if (currentWeights.length === 0) return;
 
-    const allPatterns = getAllPatterns();
+    const allPatterns = getAllPatterns() as Record<string, readonly string[]>;
     const pattern = allPatterns[selectedPattern] || LOADING_PATTERNS.default;
     let bestWeights = [...currentWeights];
     let bestCG = direction === 'forward' ? -Infinity : Infinity;
@@ -919,15 +920,16 @@ export default function WeightCalculator() {
             </select>
           </div>
 
-          <div className="mb-2 sm:mb-3">
-            <Button
-              onClick={handleStartPatternCreation}
-              variant="outline"
-              size="sm"
-              className="w-full bg-purple-50 hover:bg-purple-100 text-xs sm:text-sm"
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-2 block">Display Units</label>
+            <select
+              className="w-full px-3 py-2 border rounded-md text-sm"
+              value={units}
+              onChange={(e) => setUnits(e.target.value as 'LB' | 'KG')}
             >
-              Create Custom Pattern
-            </Button>
+              <option value="LB">Pounds (LB)</option>
+              <option value="KG">Kilograms (KG)</option>
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
@@ -1000,7 +1002,8 @@ export default function WeightCalculator() {
           <div className="h-full overflow-y-auto p-2 sm:p-4">
             <LoadingGrid 
               key={selectedPattern}
-              onWeightChange={handleCompute} 
+              onWeightChange={handleCompute}
+              units={units} 
               onFuelLoad={handleFuelLoad}
               loadingSequence={[...getAllPatterns()[selectedPattern as keyof ReturnType<typeof getAllPatterns>]]}
               initialWeights={testWeights}
@@ -1036,12 +1039,14 @@ export default function WeightCalculator() {
                           variant="300ER"
                           loadingPoints={loadingPoints}
                           opportunityWindow={opportunityWindow}
+                          units={units}
                         />
                       ) : (
                         <WeightChart
                           variant="200LR"
                           loadingPoints={loadingPoints}
                           opportunityWindow={opportunityWindow}
+                          units={units}
                         />
                       )}
                     </div>
@@ -1053,7 +1058,7 @@ export default function WeightCalculator() {
                 <Card className="h-full">
                   <CardContent className="h-full p-4 overflow-auto">
                     {tableData.length > 1 ? (
-                      <LoadingTable data={tableData} />
+                      <LoadingTable data={tableData} units={units} />
                     ) : (
                       <div className="flex items-center justify-center h-full text-gray-500">
                         <div className="text-center">
@@ -1190,7 +1195,7 @@ export default function WeightCalculator() {
                                 <li>Click any position to add/remove it from the pattern</li>
                                 <li>Drag positions in the loading order to rearrange them</li>
                                 <li>Numbers show the loading sequence order</li>
-                                <li>Use "Clear All" to start over</li>
+                                <li>Use &quot;Clear All&quot; to start over</li>
                               </ul>
                             </div>
                           </div>
@@ -1305,7 +1310,7 @@ export default function WeightCalculator() {
 
                           <div className="grid grid-cols-3 gap-4">
                             <div>
-                              <label className="text-sm font-medium text-gray-700 mb-1 block">Max Weight (lbs)</label>
+                              <label className="text-sm font-medium text-gray-700 mb-1 block">Max Weight ({getWeightUnit(units)})</label>
                               <input
                                 type="number"
                                 className="w-full px-3 py-2 border rounded-md text-sm"
@@ -1389,14 +1394,14 @@ export default function WeightCalculator() {
                         <div className="border-t pt-4">
                           <h4 className="text-md font-medium text-gray-900 mb-3">Boeing Standard Pallet Specifications</h4>
                           <div className="space-y-2">
-                            {Object.entries(BOEING_PALLET_SPECS).map(([code, spec]) => (
+                            {(Object.entries(BOEING_PALLET_SPECS) as [string, { description: string; maxWeight: number; dimensions: string; momentMultiplier: number; category: string }][]).map(([code, spec]) => (
                               <div key={code} className="border rounded-md p-3 bg-blue-50">
                                 <div className="flex justify-between items-start mb-2">
                                   <div className="flex items-center gap-3">
                                     <h5 className="font-bold text-blue-900">{code}</h5>
                                     <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded">{spec.category}</span>
                                   </div>
-                                  <span className="text-xs text-blue-600">Max: {spec.maxWeight.toLocaleString()} lbs</span>
+                                  <span className="text-xs text-blue-600">Max: {convertWeight(spec.maxWeight, units).toLocaleString()} {getWeightUnit(units)}</span>
                                 </div>
                                 <p className="text-sm text-blue-800 mb-1">{spec.description}</p>
                                 <div className="text-xs text-blue-600 flex gap-4">
@@ -1551,14 +1556,14 @@ export default function WeightCalculator() {
                         <div className="border-t pt-4">
                           <h4 className="text-md font-medium text-gray-900 mb-3">Default Custom Positions</h4>
                           <div className="space-y-2">
-                            {Object.entries(CUSTOM_PALLET_POSITIONS).map(([code, pos]) => (
+                            {(Object.entries(CUSTOM_PALLET_POSITIONS) as [string, { name: string; momentArm: number; palletType: string }][]).map(([code, pos]) => (
                               <div key={code} className="border rounded-md p-3 bg-blue-50">
                                 <div className="flex justify-between items-start mb-2">
                                   <div className="flex items-center gap-3">
                                     <h5 className="font-bold text-blue-900">{code}</h5>
                                     <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded">{pos.palletType}</span>
                                   </div>
-                                  <span className="text-xs text-blue-600">Arm: {pos.momentArm}"</span>
+                                  <span className="text-xs text-blue-600">Arm: {pos.momentArm}&quot;</span>
                                 </div>
                                 <p className="text-sm text-blue-800">{pos.name}</p>
                               </div>
@@ -1578,7 +1583,7 @@ export default function WeightCalculator() {
                                       <span className="text-xs bg-gray-200 text-gray-800 px-2 py-1 rounded">{pos.palletType}</span>
                                       <span className="text-xs bg-green-200 text-green-800 px-2 py-1 rounded">Local</span>
                                     </div>
-                                    <span className="text-xs text-gray-600">Arm: {pos.momentArm}"</span>
+                                    <span className="text-xs text-gray-600">Arm: {pos.momentArm}&quot;</span>
                                   </div>
                                   <p className="text-sm text-gray-800">{pos.name}</p>
                                 </div>
@@ -1591,7 +1596,7 @@ export default function WeightCalculator() {
                                       <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded">{position.pallet_type}</span>
                                       <span className="text-xs bg-purple-200 text-purple-800 px-2 py-1 rounded">Database</span>
                                     </div>
-                                    <span className="text-xs text-blue-600">Arm: {position.moment_arm}"</span>
+                                    <span className="text-xs text-blue-600">Arm: {position.moment_arm}&quot;</span>
                                   </div>
                                   <p className="text-sm text-blue-800">{position.name}</p>
                                   <p className="text-xs text-blue-600 mt-1">Used: {position.used_count} times</p>
@@ -1642,7 +1647,7 @@ export default function WeightCalculator() {
                     <div className="text-xl font-mono">
                       {new Intl.NumberFormat().format(fuelLoaded ? 
                         loadingPoints[loadingPoints.length - 2].weight : 
-                        loadingPoints[loadingPoints.length - 1].weight)} lbs
+                        convertWeight(loadingPoints[loadingPoints.length - 1].weight, units))} {getWeightUnit(units)}
                     </div>
                     <div className="text-xs text-gray-600">
                       {fuelLoaded ? 
@@ -1653,7 +1658,7 @@ export default function WeightCalculator() {
                   
                   <div className="p-3 border rounded-lg bg-yellow-50">
                     <div className="font-bold text-sm">Fuel</div>
-                    <div className="text-xl font-mono">{new Intl.NumberFormat().format(fuelWeight)} lbs</div>
+                    <div className="text-xl font-mono">{new Intl.NumberFormat().format(convertWeight(fuelWeight, units))} {getWeightUnit(units)}</div>
                     {fuelLoaded && (
                       <div className="text-xs text-gray-600">
                         Arm: {getFuelArm(fuelWeight).toFixed(1)}
@@ -1664,7 +1669,7 @@ export default function WeightCalculator() {
                   <div className={`p-3 border rounded-lg ${fuelLoaded ? 'bg-green-50' : 'bg-orange-50'}`}>
                     <div className="font-bold text-sm">TOW</div>
                     <div className="text-xl font-mono">
-                      {new Intl.NumberFormat().format(loadingPoints[loadingPoints.length - 1].weight)} lbs
+                      {new Intl.NumberFormat().format(convertWeight(loadingPoints[loadingPoints.length - 1].weight, units))} {getWeightUnit(units)}
                     </div>
                     <div className={`text-xs ${fuelLoaded ? 'text-green-600' : 'text-orange-600'}`}>
                       {loadingPoints[loadingPoints.length - 1].cg.toFixed(2)}% MAC
