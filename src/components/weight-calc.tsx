@@ -128,7 +128,7 @@ export default function WeightCalculator() {
     const pattern = allPatterns[selectedPattern] || LOADING_PATTERNS.default;
     const generatedWeights = pattern.map((position) => ({
       position,
-      weight: Math.floor(Math.random() * 3000) + 5000 // Random weight between 4000-6000 lbs
+      weight: Math.floor(Math.random() * (defaults.testFillMax - defaults.testFillMin)) + defaults.testFillMin
     }));
     
     setTestWeights(generatedWeights);
@@ -868,6 +868,26 @@ export default function WeightCalculator() {
               <span className="hidden sm:inline">777-</span>200LR
             </Button>
               </div>
+              
+              {/* Unit System Toggle */}
+              <div className="flex gap-2 mt-3">
+                <Button
+                  onClick={() => setUnitSystem('imperial')}
+                  variant={unitSystem === 'imperial' ? 'default' : 'outline'}
+                  size="sm"
+                  className="flex-1"
+                >
+                  Imperial (lbs)
+                </Button>
+                <Button
+                  onClick={() => setUnitSystem('metric')}
+                  variant={unitSystem === 'metric' ? 'default' : 'outline'}
+                  size="sm"
+                  className="flex-1"
+                >
+                  Metric (kg)
+                </Button>
+              </div>
             </div>
           )}
           
@@ -1007,6 +1027,7 @@ export default function WeightCalculator() {
               onFuelLoad={handleFuelLoad}
               loadingSequence={[...getAllPatterns()[selectedPattern as keyof ReturnType<typeof getAllPatterns>]]}
               initialWeights={testWeights}
+              unitSystem={unitSystem}
             />
           </div>
           </div>
@@ -1062,8 +1083,8 @@ export default function WeightCalculator() {
                     ) : (
                       <div className="flex items-center justify-center h-full text-gray-500">
                         <div className="text-center">
-                          <p className="text-lg">No loading data available</p>
-                          <p className="text-sm">Use the Test Fill button or manually add weights to see loading progression data</p>
+                          <p className="text-lg text-black">No loading data available</p>
+                          <p className="text-sm text-black">Use the Test Fill button or manually add weights to see loading progression data</p>
                         </div>
                       </div>
                     )}
@@ -1634,7 +1655,7 @@ export default function WeightCalculator() {
         {/* Right Summary Panel */}
         <div className="hidden sm:flex w-72 xl:w-80 lg:w-72 md:w-64 sm:w-56 bg-white border-l border-gray-200 flex-col">
           <div className="p-4 border-b border-gray-200">
-            <h2 className="text-lg font-bold text-gray-900">Summary</h2>
+            <h2 className="text-lg font-bold text-black">Summary</h2>
           </div>
           
           <div className="flex-1 p-4 overflow-y-auto">
@@ -1745,8 +1766,8 @@ export default function WeightCalculator() {
             ) : (
               <div className="flex items-center justify-center h-full text-gray-700">
                 <div className="text-center">
-                  <p className="text-sm">No data available</p>
-                  <p className="text-xs mt-1">Use Test Fill to see summary</p>
+                  <p className="text-sm text-black">No data available</p>
+                  <p className="text-xs mt-1 text-black">Use Test Fill to see summary</p>
                 </div>
               </div>
             )}

@@ -21,9 +21,9 @@ export function LoadingGrid({
   initialWeights,
   units = 'LB'
 }: LoadingGridProps) {
-  const [weights, setWeights] = useState<Array<{ weight: number; position: string }>>(() => {
+  const [weights, setWeights] = useState<Array<{ weight: number; position: string; id: string }>>(() => {
     if (initialWeights && initialWeights.length > 0) {
-      return initialWeights;
+      return initialWeights.map((w, i) => ({ ...w, id: `${w.position}-${i}` }));
     }
     // Default weight always stored in pounds
     return [{ weight: 6000, position: loadingSequence[0] }];
@@ -32,16 +32,20 @@ export function LoadingGrid({
 
   useEffect(() => {
     if (initialWeights && initialWeights.length > 0) {
-      setWeights(initialWeights);
+      setWeights(initialWeights.map((w, i) => ({ ...w, id: `${w.position}-${i}` })));
     }
   }, [initialWeights]);
 
   const handleWeightChange = (index: number, value: string) => {
+    // Convert input value from display units to imperial (for internal calculations)
+    const inputWeight = Number(value) || 0;
+    const weightInImperial = convertWeight(inputWeight, unitSystem, 'imperial');
+    
     const newWeights = weights.map((w, i) => 
-      i === index ? { ...w, weight: Number(value) || 0 } : w
+      i === index ? { ...w, weight: weightInImperial } : w
     );
     setWeights(newWeights);
-    onWeightChange(newWeights);
+    onWeightChange(newWeights.map(({ weight, position }) => ({ weight, position })));
   };
 
   const addWeight = () => {
@@ -53,21 +57,21 @@ export function LoadingGrid({
     // Always store weights internally in pounds
     const newWeights = [...weights, { weight: 6000, position: nextPosition }];
     setWeights(newWeights);
-    onWeightChange(newWeights);
+    onWeightChange(newWeights.map(({ weight, position }) => ({ weight, position })));
   };
 
   const removeWeight = (index: number) => {
     // Don't remove if it would leave us with no weights
     if (weights.length === 1) {
-      const resetWeights = [{ weight: 0, position: DEFAULT_LOADING_SEQUENCE[0] }];
+      const resetWeights = [{ weight: 0, position: DEFAULT_LOADING_SEQUENCE[0], id: `${DEFAULT_LOADING_SEQUENCE[0]}-0` }];
       setWeights(resetWeights);
-      onWeightChange(resetWeights);
+      onWeightChange(resetWeights.map(({ weight, position }) => ({ weight, position })));
       return;
     }
 
     const newWeights = weights.filter((_, i) => i !== index);
     setWeights(newWeights);
-    onWeightChange(newWeights);
+    onWeightChange(newWeights.map(({ weight, position }) => ({ weight, position })));
   };
 
   const handleFuelChange = (value: string) => {

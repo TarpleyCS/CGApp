@@ -2,6 +2,17 @@
 
 // Position mapping for moment arms
 export const POSITION_MAP = {
+  // Forward Compartment Positions
+  '11P': 249.2,
+  '12P': 347.1,
+  '13P': 444.9,
+  '21P': 542.6,
+  '22P': 640.2,
+  '23P': 737.9,
+  '24P': 835.6,
+  '25P': 933.3,
+  
+  // Main Deck Positions
   AL: 460,
   AR: 460,
   BL: 586,
@@ -29,6 +40,14 @@ export const POSITION_MAP = {
   PL: 1984,
   PR: 1984,
   R: 2095,
+  
+  // Aft Compartment Positions
+  '31P': 1498.0,
+  '32P': 1595.7,
+  '33P': 1693.4,
+  '34P': 1791.0,
+  '41P': 1922.3,
+  '42P': 2020.9,
 } as const;
 
 // Operating Empty Weight data for different variants
@@ -50,13 +69,48 @@ export const OEW_DATA = {
 // Loading patterns for different cargo loading strategies
 export const LOADING_PATTERNS = {
   default: [
+    // Main deck positions first
     'R', 'PL', 'PR', 'AL', 'AR', 'BL', 'BR', 'CL', 'CR', 'DL', 'DR',
     'EL', 'ER', 'FL', 'FR', 'GL', 'GR', 'HL', 'HR', 'JL', 'JR',
-    'KL', 'KR', 'LR', 'LL', 'ML', 'MR'
+    'KL', 'KR', 'LR', 'LL', 'ML', 'MR',
+    // Forward compartment positions (after main deck)
+    '11P', '12P', '13P', '21P', '22P', '23P', '24P', '25P',
+    // Aft compartment positions (after main deck)
+    '31P', '32P', '33P', '34P', '41P', '42P'
   ],
-  forward: ['R', 'AL', 'AR', 'BL', 'BR', 'CL', 'CR', 'DL', 'DR', 'PL', 'PR'],
-  aft: ['ML', 'MR', 'LL', 'LR', 'KL', 'KR', 'JL', 'JR', 'HL', 'HR', 'GL', 'GR'],
-  balanced: ['FL', 'FR', 'EL', 'ER', 'DL', 'DR', 'GL', 'GR', 'JL', 'JR', 'ML', 'MR'],
+  forward: [
+    // Forward loading - prioritize forward positions
+    'AL', 'AR', 'BL', 'BR', 'CL', 'CR', 'DL', 'DR', 'EL', 'ER', 'FL', 'FR',
+    'PL', 'PR', 'R',
+    // Forward compartment positions
+    '11P', '12P', '13P', '21P', '22P', '23P', '24P', '25P',
+    // Then aft positions if needed
+    'GL', 'GR', 'HL', 'HR', 'JL', 'JR', 'KL', 'KR', 'LL', 'LR', 'ML', 'MR',
+    // Aft compartment positions last
+    '31P', '32P', '33P', '34P', '41P', '42P'
+  ],
+  aft: [
+    // Aft loading - prioritize aft positions
+    'ML', 'MR', 'LL', 'LR', 'KL', 'KR', 'JL', 'JR', 'HL', 'HR', 'GL', 'GR',
+    'R',
+    // Aft compartment positions
+    '31P', '32P', '33P', '34P', '41P', '42P',
+    // Then forward positions if needed
+    'PL', 'PR', 'FL', 'FR', 'EL', 'ER', 'DL', 'DR', 'CL', 'CR', 'BL', 'BR', 'AL', 'AR',
+    // Forward compartment positions last
+    '11P', '12P', '13P', '21P', '22P', '23P', '24P', '25P'
+  ],
+  balanced: [
+    // Balanced loading - center positions first
+    'FL', 'FR', 'EL', 'ER', 'DL', 'DR', 'GL', 'GR', 'JL', 'JR', 'ML', 'MR',
+    // Then outer positions
+    'AL', 'AR', 'BL', 'BR', 'CL', 'CR', 'HL', 'HR', 'KL', 'KR', 'LL', 'LR',
+    'PL', 'PR', 'R',
+    // Forward compartment positions
+    '11P', '12P', '13P', '21P', '22P', '23P', '24P', '25P',
+    // Aft compartment positions
+    '31P', '32P', '33P', '34P', '41P', '42P'
+  ],
 } as const;
 
 // Constants for CG calculations
@@ -67,9 +121,14 @@ export const CG_CONSTANTS = {
 
 // Default loading sequence
 export const DEFAULT_LOADING_SEQUENCE = [
+  // Main deck positions first
   'R', 'PL', 'PR', 'AL', 'AR', 'BL', 'BR', 'CL', 'CR', 'DL', 'DR',
   'EL', 'ER', 'FL', 'FR', 'GL', 'GR', 'HL', 'HR', 'JL', 'JR',
-  'KL', 'KR', 'LR', 'LL', 'ML', 'MR'
+  'KL', 'KR', 'LR', 'LL', 'ML', 'MR',
+  // Forward compartment positions (after main deck)
+  '11P', '12P', '13P', '21P', '22P', '23P', '24P', '25P',
+  // Aft compartment positions (after main deck)
+  '31P', '32P', '33P', '34P', '41P', '42P'
 ] as const;
 
 // Fuel CG data for interpolation
