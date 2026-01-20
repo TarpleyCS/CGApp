@@ -87,10 +87,10 @@ export function LoadingGrid({
     <Card className="border-0 shadow-none">
       <CardContent className="p-4">
         <div className="space-y-4">
-          <div className="font-bold text-center mb-4">Pallet Loading Sequence</div>
+          <div className="font-bold text-center mb-4 text-black">Pallet Loading Sequence</div>
           {weights.map((weight, index) => (
             <div key={index} className="flex items-center gap-2">
-              <div className="w-20 text-right text-sm text-gray-500">
+              <div className="w-20 text-right text-sm text-black">
                 {`${index + 1}. ${weight.position}`}
               </div>
               <input
@@ -102,7 +102,7 @@ export function LoadingGrid({
                   const internalValue = units === 'KG' ? Math.round(displayValue / 0.453592) : displayValue;
                   handleWeightChange(index, internalValue.toString());
                 }}
-                className="flex-1 px-3 py-2 border rounded-md text-center"
+                className="flex-1 px-3 py-2 border rounded-md text-center text-black"
                 min={0}
                 max={units === 'KG' ? 5440 : 12000} // Adjust max for KG
                 step={units === 'KG' ? 225 : 500}   // Adjust step for KG
@@ -129,7 +129,7 @@ export function LoadingGrid({
               </button>
             </div>
           ))}
-          <div className="flex gap-4">
+          <div className="flex gap-4 text-black">
             <Button 
               onClick={addWeight} 
               variant="outline" 
@@ -149,16 +149,16 @@ export function LoadingGrid({
           {/* Fuel Loading Section */}
           {onFuelLoad && (
             <div className="mt-8 pt-4 border-t">
-              <div className="font-bold text-center mb-4">Fuel Loading</div>
+              <div className="font-bold text-center mb-4 text-black">Fuel Loading</div>
               <div className="flex items-center gap-2">
-                <div className="w-20 text-right text-sm text-gray-500">
+                <div className="w-20 text-right text-sm text-black">
                   Fuel ({getWeightUnit(units)})
                 </div>
                 <input
                   type="number"
                   value={convertWeight(fuelWeight, units) || ''}
                   onChange={(e) => handleFuelChange(e.target.value)}
-                  className="flex-1 px-3 py-2 border rounded-md text-center"
+                  className="flex-1 px-3 py-2 border rounded-md text-center text-black"
                   min={0}
                   max={units === 'KG' ? 122472 : 270000} // Adjust max for KG
                   step={units === 'KG' ? 450 : 1000}     // Adjust step for KG

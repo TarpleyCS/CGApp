@@ -886,9 +886,9 @@ export default function WeightCalculator() {
         {!sidebarCollapsed && (
           <div className="p-2 sm:p-4 border-b border-gray-200 space-y-2 sm:space-y-3">
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-2 block">Loading Pattern</label>
+            <label className="text-sm font-medium text-black mb-2 block">Loading Pattern</label>
             <select
-              className="w-full px-3 py-2 border rounded-md text-sm"
+              className="w-full px-3 py-2 border rounded-md text-black text-sm"
               value={selectedPattern}
               onChange={(e) => {
                 setSelectedPattern(e.target.value);
@@ -914,16 +914,16 @@ export default function WeightCalculator() {
               ))}
               {dbPatterns.map(pattern => (
                 <option key={pattern.name} value={pattern.name}>
-                  {pattern.name} (DB - ⭐{pattern.rating})
+                  {pattern.name}
                 </option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-2 block">Display Units</label>
+            <label className="text-sm font-medium text-black mb-2 block">Display Units</label>
             <select
-              className="w-full px-3 py-2 border rounded-md text-sm"
+              className="w-full px-3 py-2 border rounded-md text-black text-sm"
               value={units}
               onChange={(e) => setUnits(e.target.value as 'LB' | 'KG')}
             >
@@ -937,7 +937,7 @@ export default function WeightCalculator() {
               onClick={handleTestFill}
               variant="outline"
               size="sm"
-              className="bg-blue-50 hover:bg-blue-100 text-xs sm:text-sm"
+              className="bg-blue-50 hover:bg-blue-100 text-black text-xs sm:text-sm"
             >
               Test Fill
             </Button>
@@ -945,7 +945,7 @@ export default function WeightCalculator() {
               onClick={handleOptimize}
               variant="outline"
               size="sm"
-              className="bg-green-50 hover:bg-green-100 text-xs sm:text-sm"
+              className="bg-green-50 hover:bg-green-100 text-black text-xs sm:text-sm"
               disabled={tableData.length === 0}
             >
               Optimize
@@ -957,7 +957,7 @@ export default function WeightCalculator() {
               onClick={handleOptimizePSO}
               variant="outline"
               size="sm"
-              className="bg-red-50 hover:bg-red-100 text-xs sm:text-sm"
+              className="bg-red-50 hover:bg-red-100 text-black text-xs sm:text-sm"
               disabled={tableData.length === 0}
             >
               PSO
@@ -966,7 +966,7 @@ export default function WeightCalculator() {
               onClick={handleOptimizeILP}
               variant="outline"
               size="sm"
-              className="bg-indigo-50 hover:bg-indigo-100 text-xs sm:text-sm"
+              className="bg-indigo-50 hover:bg-indigo-100 text-black text-xs sm:text-sm"
               disabled={tableData.length === 0}
             >
               ILP
@@ -978,7 +978,7 @@ export default function WeightCalculator() {
               onClick={() => handleOpportunitySelect('forward')}
               variant="outline"
               size="sm"
-              className="bg-purple-50 hover:bg-purple-100 text-xs sm:text-sm"
+              className="bg-purple-50 hover:bg-purple-100 text-black text-xs sm:text-sm"
               disabled={opportunityWindow.length === 0}
             >
               Max Fwd CG
@@ -987,7 +987,7 @@ export default function WeightCalculator() {
               onClick={() => handleOpportunitySelect('aft')}
               variant="outline"
               size="sm"
-              className="bg-orange-50 hover:bg-orange-100 text-xs sm:text-sm"
+              className="bg-orange-50 hover:bg-orange-100 text-black text-xs sm:text-sm"
               disabled={opportunityWindow.length === 0}
             >
               Max Aft CG
@@ -1643,32 +1643,32 @@ export default function WeightCalculator() {
                 {/* Weight Summary */}
                 <div className="space-y-3">
                   <div className="p-3 border rounded-lg bg-blue-50">
-                    <div className="font-bold text-sm">ZFW</div>
-                    <div className="text-xl font-mono">
-                      {new Intl.NumberFormat().format(fuelLoaded ? 
-                        loadingPoints[loadingPoints.length - 2].weight : 
+                    <div className="font-bold text-sm text-black">ZFW</div>
+                    <div className="text-xl font-mono text-black">
+                      {new Intl.NumberFormat().format(fuelLoaded ?
+                        loadingPoints[loadingPoints.length - 2].weight :
                         convertWeight(loadingPoints[loadingPoints.length - 1].weight, units))} {getWeightUnit(units)}
                     </div>
-                    <div className="text-xs text-gray-600">
-                      {fuelLoaded ? 
-                        loadingPoints[loadingPoints.length - 2].cg.toFixed(2) : 
+                    <div className="text-xs text-black">
+                      {fuelLoaded ?
+                        loadingPoints[loadingPoints.length - 2].cg.toFixed(2) :
                         loadingPoints[loadingPoints.length - 1].cg.toFixed(2)}% MAC
                     </div>
                   </div>
                   
                   <div className="p-3 border rounded-lg bg-yellow-50">
-                    <div className="font-bold text-sm">Fuel</div>
-                    <div className="text-xl font-mono">{new Intl.NumberFormat().format(convertWeight(fuelWeight, units))} {getWeightUnit(units)}</div>
+                    <div className="font-bold text-sm text-black">Fuel</div>
+                    <div className="text-xl font-mono text-black">{new Intl.NumberFormat().format(convertWeight(fuelWeight, units))} {getWeightUnit(units)}</div>
                     {fuelLoaded && (
-                      <div className="text-xs text-gray-600">
+                      <div className="text-xs text-black">
                         Arm: {getFuelArm(fuelWeight).toFixed(1)}
                       </div>
                     )}
                   </div>
                   
                   <div className={`p-3 border rounded-lg ${fuelLoaded ? 'bg-green-50' : 'bg-orange-50'}`}>
-                    <div className="font-bold text-sm">TOW</div>
-                    <div className="text-xl font-mono">
+                    <div className="font-bold text-sm text-black">TOW</div>
+                    <div className="text-xl font-mono text-black">
                       {new Intl.NumberFormat().format(convertWeight(loadingPoints[loadingPoints.length - 1].weight, units))} {getWeightUnit(units)}
                     </div>
                     <div className={`text-xs ${fuelLoaded ? 'text-green-600' : 'text-orange-600'}`}>
@@ -1681,10 +1681,10 @@ export default function WeightCalculator() {
                 {opportunityWindow.length > 0 && (
                   <div className="p-3 border rounded-lg bg-cyan-50">
                     <h3 className="font-bold text-sm mb-2">CG Opportunity Range</h3>
-                    <p className="text-xs text-gray-600 mb-2">
+                    <p className="text-xs text-black mb-2">
                       Range of possible CG positions with current cargo weights
                     </p>
-                    <div className="text-xs space-y-1">
+                    <div className="text-xs text-black space-y-1">
                       <div className="flex justify-between">
                         <span>Forward-most:</span>
                         <span className="font-mono">{Math.max(...opportunityWindow.map(p => p.cg)).toFixed(2)}% MAC</span>
@@ -1704,7 +1704,7 @@ export default function WeightCalculator() {
                 {/* Current Status */}
                 <div className="p-3 border rounded-lg bg-gray-50">
                   <h3 className="font-bold text-sm mb-2">Current Status</h3>
-                  <div className="text-xs space-y-1">
+                  <div className="text-xs text-black space-y-1">
                     <div className="flex justify-between">
                       <span>Aircraft:</span>
                       <span className="font-mono">777-{variant}</span>
@@ -1730,7 +1730,7 @@ export default function WeightCalculator() {
                 {loadingPoints.length > 1 && (
                   <div className="p-3 border rounded-lg">
                     <h3 className="font-bold text-sm mb-2">Envelope Status</h3>
-                    <div className="text-xs">
+                    <div className="text-xs text-black">
                       {loadingPoints.slice(1).every(point => 
                         isPointInEnvelope(point.cg, point.weight)
                       ) ? (
@@ -1743,7 +1743,7 @@ export default function WeightCalculator() {
                 )}
               </div>
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-400">
+              <div className="flex items-center justify-center h-full text-gray-700">
                 <div className="text-center">
                   <p className="text-sm">No data available</p>
                   <p className="text-xs mt-1">Use Test Fill to see summary</p>
