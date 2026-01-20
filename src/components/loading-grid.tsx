@@ -3,20 +3,22 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DEFAULT_LOADING_SEQUENCE } from '@/lib/constants';
-import { convertWeight, getWeightUnit } from '@/lib/units';
+import { convertWeight, getWeightUnit, type Units } from '@/lib/units';
 
 interface LoadingGridProps {
   onWeightChange: (weights: Array<{ weight: number; position: string }>) => void;
   onFuelLoad?: (fuelWeight: number) => void;
   loadingSequence?: string[];
   initialWeights?: Array<{ weight: number; position: string }>;
-  units?: 'LB' | 'KG';
+  units?: Units;
 }
 
+// Default pallet weight in pounds
+const DEFAULT_PALLET_WEIGHT = 5000;
 
-export function LoadingGrid({ 
-  onWeightChange, 
-  onFuelLoad, 
+export function LoadingGrid({
+  onWeightChange,
+  onFuelLoad,
   loadingSequence = [...DEFAULT_LOADING_SEQUENCE],
   initialWeights,
   units = 'LB'
@@ -25,8 +27,7 @@ export function LoadingGrid({
     if (initialWeights && initialWeights.length > 0) {
       return initialWeights.map((w, i) => ({ ...w, id: `${w.position}-${i}` }));
     }
-    // Default weight always stored in pounds
-    return [{ weight: 6000, position: loadingSequence[0] }];
+    return [{ weight: DEFAULT_PALLET_WEIGHT, position: loadingSequence[0], id: `${loadingSequence[0]}-0` }];
   });
   const [fuelWeight, setFuelWeight] = useState<number>(0);
 
@@ -37,12 +38,13 @@ export function LoadingGrid({
   }, [initialWeights]);
 
   const handleWeightChange = (index: number, value: string) => {
-    // Convert input value from display units to imperial (for internal calculations)
+    // Convert input value from display units to pounds (for internal calculations)
     const inputWeight = Number(value) || 0;
-    const weightInImperial = convertWeight(inputWeight, unitSystem, 'imperial');
-    
-    const newWeights = weights.map((w, i) => 
-      i === index ? { ...w, weight: weightInImperial } : w
+    // If user is entering KG, convert to LB; otherwise keep as LB
+    const weightInPounds = units === 'KG' ? Math.round(inputWeight / 0.453592) : inputWeight;
+
+    const newWeights = weights.map((w, i) =>
+      i === index ? { ...w, weight: weightInPounds } : w
     );
     setWeights(newWeights);
     onWeightChange(newWeights.map(({ weight, position }) => ({ weight, position })));
@@ -52,10 +54,9 @@ export function LoadingGrid({
     if (weights.length >= loadingSequence.length) {
       return; // Maximum positions reached
     }
-    
+
     const nextPosition = loadingSequence[weights.length];
-    // Always store weights internally in pounds
-    const newWeights = [...weights, { weight: 6000, position: nextPosition }];
+    const newWeights = [...weights, { weight: DEFAULT_PALLET_WEIGHT, position: nextPosition, id: `${nextPosition}-${weights.length}` }];
     setWeights(newWeights);
     onWeightChange(newWeights.map(({ weight, position }) => ({ weight, position })));
   };
@@ -75,10 +76,11 @@ export function LoadingGrid({
   };
 
   const handleFuelChange = (value: string) => {
-    const displayValue = Number(value) || 0;
-    // Convert to pounds if needed for internal storage
-    const internalValue = units === 'KG' ? Math.round(displayValue / 0.453592) : displayValue;
-    setFuelWeight(internalValue);
+    // Convert input value from display units to pounds (for internal calculations)
+    const inputWeight = Number(value) || 0;
+    // If user is entering KG, convert to LB; otherwise keep as LB
+    const weightInPounds = units === 'KG' ? Math.round(inputWeight / 0.453592) : inputWeight;
+    setFuelWeight(weightInPounds);
   };
 
   const handleLoadFuel = () => {
@@ -93,24 +95,31 @@ export function LoadingGrid({
         <div className="space-y-4">
           <div className="font-bold text-center mb-4 text-black">Pallet Loading Sequence</div>
           {weights.map((weight, index) => (
-            <div key={index} className="flex items-center gap-2">
+            <div key={weight.id} className="flex items-center gap-2">
               <div className="w-20 text-right text-sm text-black">
                 {`${index + 1}. ${weight.position}`}
               </div>
               <input
                 type="number"
-                value={convertWeight(weight.weight, units) || ''}
-                onChange={(e) => {
-                  // Convert back to pounds for internal storage
-                  const displayValue = Number(e.target.value) || 0;
-                  const internalValue = units === 'KG' ? Math.round(displayValue / 0.453592) : displayValue;
-                  handleWeightChange(index, internalValue.toString());
+                value={weight.weight ? convertWeight(weight.weight, units) : ''}
+                onChange={(e) => handleWeightChange(index, e.target.value)}
+                onKeyDown={(e) => {
+                  // Prevent arrow keys from triggering unwanted behavior
+                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    e.stopPropagation();
+                  }
+                }}
+                onWheel={(e) => {
+                  // Prevent mouse wheel from changing number input values when focused
+                  if (document.activeElement === e.currentTarget) {
+                    e.preventDefault();
+                  }
                 }}
                 className="flex-1 px-3 py-2 border rounded-md text-center text-black"
                 min={0}
-                max={units === 'KG' ? 5440 : 12000} // Adjust max for KG
-                step={units === 'KG' ? 225 : 500}   // Adjust step for KG
-                placeholder={`Weight (${units.toLowerCase()})`}
+                max={units === 'KG' ? 9000 : 20000}
+                step={units === 'KG' ? 10 : 100}
+                placeholder={`Enter weight (${getWeightUnit(units)})`}
               />
               <button
                 onClick={() => removeWeight(index)}
@@ -134,16 +143,16 @@ export function LoadingGrid({
             </div>
           ))}
           <div className="flex gap-4 text-black">
-            <Button 
-              onClick={addWeight} 
-              variant="outline" 
+            <Button
+              onClick={addWeight}
+              variant="outline"
               className="flex-1"
               disabled={weights.length >= DEFAULT_LOADING_SEQUENCE.length}
             >
               Add Pallet
             </Button>
           </div>
-          
+
           {weights.length >= DEFAULT_LOADING_SEQUENCE.length && (
             <div className="text-sm text-amber-600 text-center">
               Maximum loading positions reached
@@ -160,29 +169,29 @@ export function LoadingGrid({
                 </div>
                 <input
                   type="number"
-                  value={convertWeight(fuelWeight, units) || ''}
+                  value={fuelWeight ? convertWeight(fuelWeight, units) : ''}
                   onChange={(e) => handleFuelChange(e.target.value)}
                   className="flex-1 px-3 py-2 border rounded-md text-center text-black"
                   min={0}
-                  max={units === 'KG' ? 122472 : 270000} // Adjust max for KG
-                  step={units === 'KG' ? 450 : 1000}     // Adjust step for KG
-                  placeholder={`Fuel weight (${units.toLowerCase()})`}
+                  max={units === 'KG' ? 150000 : 330000}
+                  step={units === 'KG' ? 100 : 500}
+                  placeholder={`Enter fuel weight (${getWeightUnit(units)})`}
                 />
               </div>
-              <Button 
+              <Button
                 onClick={handleLoadFuel}
                 className="w-full mt-4"
                 variant="default"
               >
-                <svg 
-                  className="mr-2 h-4 w-4" 
-                  width="16" 
-                  height="16" 
-                  viewBox="0 0 24 24" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
+                <svg
+                  className="mr-2 h-4 w-4"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
                   strokeLinejoin="round"
                 >
                   <path d="M3 22v-3" />

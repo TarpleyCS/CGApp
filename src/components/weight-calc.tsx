@@ -128,9 +128,9 @@ export default function WeightCalculator() {
     const pattern = allPatterns[selectedPattern] || LOADING_PATTERNS.default;
     const generatedWeights = pattern.map((position) => ({
       position,
-      weight: Math.floor(Math.random() * (defaults.testFillMax - defaults.testFillMin)) + defaults.testFillMin
+      weight: Math.floor(Math.random() * 3000) + 5000 // Random weight between 5000-8000 lbs
     }));
-    
+
     setTestWeights(generatedWeights);
     handleCompute(generatedWeights);
   };
@@ -868,29 +868,9 @@ export default function WeightCalculator() {
               <span className="hidden sm:inline">777-</span>200LR
             </Button>
               </div>
-              
-              {/* Unit System Toggle */}
-              <div className="flex gap-2 mt-3">
-                <Button
-                  onClick={() => setUnitSystem('imperial')}
-                  variant={unitSystem === 'imperial' ? 'default' : 'outline'}
-                  size="sm"
-                  className="flex-1"
-                >
-                  Imperial (lbs)
-                </Button>
-                <Button
-                  onClick={() => setUnitSystem('metric')}
-                  variant={unitSystem === 'metric' ? 'default' : 'outline'}
-                  size="sm"
-                  className="flex-1"
-                >
-                  Metric (kg)
-                </Button>
-              </div>
             </div>
           )}
-          
+
           {/* Collapse Button */}
           <Button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -1020,14 +1000,13 @@ export default function WeightCalculator() {
         {!sidebarCollapsed && (
           <div className="flex-1 overflow-hidden bg-white">
           <div className="h-full overflow-y-auto p-2 sm:p-4">
-            <LoadingGrid 
+            <LoadingGrid
               key={selectedPattern}
               onWeightChange={handleCompute}
-              units={units} 
+              units={units}
               onFuelLoad={handleFuelLoad}
               loadingSequence={[...getAllPatterns()[selectedPattern as keyof ReturnType<typeof getAllPatterns>]]}
               initialWeights={testWeights}
-              unitSystem={unitSystem}
             />
           </div>
           </div>
