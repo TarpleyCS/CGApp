@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart, ReferenceArea, Polygon } from 'recharts';
+import { Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart, ReferenceArea } from 'recharts';
 import { formatWeight } from '@/lib/units';
 
 interface EnvelopePoint {
@@ -60,6 +60,14 @@ const ENVELOPES = {
     altFwdCGLimitTakeoff2: [
       { cg: 27.0, weight: 300000 },
       { cg: 27.0, weight: 766000 }
+    ],
+    cumulativeLoadCheck1: [
+      { cg: 14.0, weight: 420635 },
+      { cg: 28.0, weight: 543000 }
+    ],
+    cumulativeLoadCheck2: [
+      { cg: 16.7, weight: 618522 },
+      { cg: 40.4, weight: 716694 }
     ],
     OEW: { cg: 21.4, weight: 311787 }
   },
@@ -128,18 +136,18 @@ const ENVELOPES = {
 
 export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindow, units = 'LB' }: WeightChartProps) {
   // State for draggable labels
-  const [labelPositions, setLabelPositions] = useState<{[key: string]: {x: number, y: number}}>({});
+  const [labelPositions, setLabelPositions] = useState<{ [key: string]: { x: number, y: number } }>({});
   const [isDragging, setIsDragging] = useState(false);
   const [draggedLabelId, setDraggedLabelId] = useState<string | null>(null);
   const [renderKey, setRenderKey] = useState(0);
   const chartRef = useRef<HTMLDivElement>(null);
-  
+
   // Helper function to convert weights
   const convertWeight = useCallback((weight: number) => {
     return units === 'KG' ? Math.round(weight * 0.453592) : weight;
   }, [units]);
-  
-  
+
+
   // Convert envelope data to selected units
   const envelopeData = {
     ...ENVELOPES[variant],
@@ -160,6 +168,14 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
       weight: convertWeight(point.weight)
     })),
     maxTaxiWeight: ENVELOPES[variant].maxTaxiWeight.map(point => ({
+      ...point,
+      weight: convertWeight(point.weight)
+    })),
+    cumulativeLoadCheck1: ENVELOPES[variant].cumulativeLoadCheck1.map(point => ({
+      ...point,
+      weight: convertWeight(point.weight)
+    })),
+    cumulativeLoadCheck2: ENVELOPES[variant].cumulativeLoadCheck2.map(point => ({
       ...point,
       weight: convertWeight(point.weight)
     })),
@@ -184,14 +200,6 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
       altCGLimitTakeoff2: ENVELOPES['200LR'].altCGLimitTakeoff2.map(point => ({
         ...point,
         weight: convertWeight(point.weight)
-      })),
-      cumulativeLoadCheck1: ENVELOPES['200LR'].cumulativeLoadCheck1.map(point => ({
-        ...point,
-        weight: convertWeight(point.weight)
-      })),
-      cumulativeLoadCheck2: ENVELOPES['200LR'].cumulativeLoadCheck2.map(point => ({
-        ...point,
-        weight: convertWeight(point.weight)
       }))
     }),
     OEW: {
@@ -200,32 +208,32 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
     }
   };
   // Convert loading points to selected units
-  const convertedLoadingPoints = Array.isArray(loadingPoints) ? 
+  const convertedLoadingPoints = Array.isArray(loadingPoints) ?
     loadingPoints.map(point => ({
       ...point,
       weight: convertWeight(point.weight)
     })) : [];
-  
-  const loadingLine = Array.isArray(convertedLoadingPoints) ? 
-    [envelopeData.OEW, ...convertedLoadingPoints] : 
+
+  const loadingLine = Array.isArray(convertedLoadingPoints) ?
+    [envelopeData.OEW, ...convertedLoadingPoints] :
     [envelopeData.OEW];
 
   // Process opportunity window for final weight CG range visualization
   const processOpportunityWindow = () => {
     if (!opportunityWindow || opportunityWindow.length !== 2) return null;
-    
+
     // Should have exactly 2 points: min and max CG at final weight
     const sortedPoints = [...opportunityWindow].sort((a, b) => a.cg - b.cg);
     const minPoint = sortedPoints[0];
     const maxPoint = sortedPoints[1];
-    
+
     if (minPoint.weight !== maxPoint.weight) return null; // Safety check
-    
+
     // Create a vertical line/bar showing the CG range at final weight
     const finalWeight = convertWeight(minPoint.weight); // Convert weight to selected units
     const minCG = minPoint.cg;
     const maxCG = maxPoint.cg;
-    
+
     // Create data for a filled area between min and max CG at the final weight
     return {
       minCG,
@@ -239,12 +247,10 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
 
   // Create polygon data for cumulative load checks
   const createCumulativeLoadPolygons = () => {
-    if (variant !== '200LR') return { check1: [], check2: [] };
-
     const envelope = envelopeData.basicCGGrid;
 
     // Cumulative Load Check 1 polygon
-    const check1Line = (envelopeData as { cumulativeLoadCheck1: { cg: number; weight: number }[] }).cumulativeLoadCheck1;
+    const check1Line = envelopeData.cumulativeLoadCheck1;
     const check1Polygon = [
       ...check1Line,
       // Find envelope points that close the polygon from the end of the line back to the start
@@ -253,7 +259,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
     ];
 
     // Cumulative Load Check 2 polygon
-    const check2Line = (envelopeData as { cumulativeLoadCheck2: { cg: number; weight: number }[] }).cumulativeLoadCheck2;
+    const check2Line = envelopeData.cumulativeLoadCheck2;
     const check2Polygon = [
       ...check2Line,
       // Find envelope points that close the polygon from the end of the line back to the start
@@ -271,7 +277,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
     let inside = false;
     for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
       if (((polygon[i].weight > point.weight) !== (polygon[j].weight > point.weight)) &&
-          (point.cg < (polygon[j].cg - polygon[i].cg) * (point.weight - polygon[i].weight) / (polygon[j].weight - polygon[i].weight) + polygon[i].cg)) {
+        (point.cg < (polygon[j].cg - polygon[i].cg) * (point.weight - polygon[i].weight) / (polygon[j].weight - polygon[i].weight) + polygon[i].cg)) {
         inside = !inside;
       }
     }
@@ -280,13 +286,13 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
 
   // Check cumulative load requirements for the final loading point
   const checkCumulativeLoadRequirements = () => {
-    if (variant !== '200LR' || !loadingPoints || loadingPoints.length === 0) {
+    if (!loadingPoints || loadingPoints.length === 0) {
       return { check1Required: false, check2Required: false, finalPoint: null };
     }
 
     const finalPoint = loadingPoints[loadingPoints.length - 1];
     const finalPointConverted = { cg: finalPoint.cg, weight: convertWeight(finalPoint.weight) };
-    
+
     const check1Required = loadCheckPolygons.check1.length > 0 && isPointInPolygon(finalPointConverted, loadCheckPolygons.check1);
     const check2Required = loadCheckPolygons.check2.length > 0 && isPointInPolygon(finalPointConverted, loadCheckPolygons.check2);
 
@@ -298,28 +304,28 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
   // Convert data coordinates to screen coordinates
   const dataToScreen = useCallback((cg: number, weight: number) => {
     if (!chartRef.current) return { x: 0, y: 0 };
-    
+
     const cartesianGrid = chartRef.current.querySelector('.recharts-cartesian-grid');
     if (!cartesianGrid) return { x: 0, y: 0 };
-    
+
     const containerRect = chartRef.current.getBoundingClientRect();
     const gridRect = cartesianGrid.getBoundingClientRect();
-    
+
     if (gridRect.width === 0 || gridRect.height === 0) {
       return { x: 0, y: 0 };
     }
-    
+
     const offsetX = gridRect.left - containerRect.left;
     const offsetY = gridRect.top - containerRect.top;
     const chartWidth = gridRect.width;
     const chartHeight = gridRect.height;
-    
+
     const cgRange = [0, 50];
     const weightRange = [convertWeight(300000), convertWeight(800000)];
-    
+
     const x = offsetX + ((cg - cgRange[0]) / (cgRange[1] - cgRange[0])) * chartWidth;
     const y = offsetY + ((weightRange[1] - weight) / (weightRange[1] - weightRange[0])) * chartHeight;
-    
+
     return { x, y };
   }, [convertWeight]);
 
@@ -332,11 +338,11 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isDragging || !draggedLabelId || !chartRef.current) return;
-    
+
     const rect = chartRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
+
     setLabelPositions(prev => ({
       ...prev,
       [draggedLabelId]: { x, y }
@@ -370,7 +376,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
 
   // Add specific envelope point labels positioned outside like Boeing reference
   const outsideEnvelopeLabels = [];
-  
+
   if (variant === '200LR') {
     // Key envelope points for 200LR positioned outside
     outsideEnvelopeLabels.push(
@@ -378,16 +384,16 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
       { cg: 28.2, weight: convertWeight(768000), label: `${formatWeight(convertWeight(768000), units)}\nat 28.2%`, position: 'top' },
       { cg: 30.6, weight: convertWeight(768000), label: `${formatWeight(convertWeight(768000), units)}\nat 30.6%`, position: 'top' },
       { cg: 37.8, weight: convertWeight(752000), label: `${formatWeight(convertWeight(752000), units)}\nat 37.8%`, position: 'right' },
-      
+
       // Right side labels  
       { cg: 41.2, weight: convertWeight(705300), label: `${formatWeight(convertWeight(705300), units)}\nat 41.2%`, position: 'right' },
       { cg: 44.0, weight: convertWeight(609000), label: `${formatWeight(convertWeight(609000), units)}\nat 44.0%`, position: 'right' },
       { cg: 44.0, weight: convertWeight(471100), label: `${formatWeight(convertWeight(471100), units)}\nat 44.0%`, position: 'right' },
-      
+
       // Bottom right
       { cg: 39.1, weight: convertWeight(377200), label: `${formatWeight(convertWeight(377200), units)}\nat 39.1%`, position: 'bottom-right' },
       { cg: 34.9, weight: convertWeight(347000), label: `${formatWeight(convertWeight(347000), units)}\nat 34.9%`, position: 'bottom' },
-      
+
       // Left side labels
       { cg: 14.0, weight: convertWeight(460000), label: `${formatWeight(convertWeight(460000), units)}\nat 14.0%`, position: 'left' },
       { cg: 14.7, weight: convertWeight(492000), label: `${formatWeight(convertWeight(492000), units)}\nat 14.7%`, position: 'left' },
@@ -409,7 +415,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
       { cg: 18.0, weight: convertWeight(722300), label: `${formatWeight(convertWeight(722300), units)}\nat 18.0%`, position: 'left' }
     );
   }
-  
+
   // Keep envelope data without labels for the line itself
   const labeledEnvelopeData = envelopeData.basicCGGrid.map((point) => {
     return { ...point, label: '' };
@@ -453,7 +459,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
         {Object.keys(labelPositions).length > 0 && (
           <span className="text-blue-600 ml-2">• Labels repositioned - Drag to adjust</span>
         )}
-        {variant === '200LR' && cumulativeLoadStatus.finalPoint && (
+        {cumulativeLoadStatus.finalPoint && (
           <div className="mt-2 p-2 bg-gray-50 rounded">
             <div className="font-semibold text-gray-800">Cumulative Load Check Status:</div>
             <div className="text-xs mt-1">
@@ -477,7 +483,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
           </div>
         )}
       </div>
-      <div 
+      <div
         key={renderKey}
         className="flex-1 min-h-0 relative"
         ref={chartRef}
@@ -486,352 +492,356 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
         onMouseLeave={handleMouseUp}
       >
         <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart 
-          data={[]}
-          margin={{ top: 20, right: 40, left: 60, bottom: 80 }}
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis
-            type="number"
-            dataKey="cg"
-            domain={[0, 50]}
-            label={{ 
-              value: "Center of Gravity (%MAC)", 
-              position: "insideBottom", 
-              offset: -5,
-              style: { textAnchor: 'middle', fontWeight: 'bold' }
-            }}
-            ticks={[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50]}
-            allowDataOverflow={true}
-          />
-          <YAxis
-            type="number"
-            domain={[
-              convertWeight(300000), 
-              convertWeight(800000)
-            ]}
-            label={{ 
-              value: `Aircraft Weight (${units.toLowerCase()})`, 
-              angle: -90, 
-              position: "insideLeft",
-              style: { textAnchor: 'middle', fontWeight: 'bold' }
-            }}
-            tickFormatter={(value) => (value / 1000).toString() + 'K'}
-            allowDataOverflow={true}
-          />
-          <Tooltip
-            content={({ active, coordinate }) => {
-              if (active && coordinate && coordinate.x !== undefined && coordinate.y !== undefined) {
-                // Get the chart container to calculate relative positions
-                const chartContainer = chartRef.current;
-                if (!chartContainer) return null;
-                
-                // Find the actual chart plotting area
-                const cartesianGrid = chartContainer.querySelector('.recharts-cartesian-grid');
-                if (!cartesianGrid) return null;
-                
-                const containerRect = chartContainer.getBoundingClientRect();
-                const gridRect = cartesianGrid.getBoundingClientRect();
-                
-                // Calculate the plotting area dimensions and position
-                const plotAreaLeft = gridRect.left - containerRect.left;
-                const plotAreaTop = gridRect.top - containerRect.top;
-                const plotAreaWidth = gridRect.width;
-                const plotAreaHeight = gridRect.height;
-                
-                // Convert screen coordinates to data coordinates
-                const cgRange = [0, 50];
-                const weightRange = [300000, 800000]; // Base units (pounds) - matches original data
-                
-                // Calculate relative position within the plot area
-                const relativeX = (coordinate.x - plotAreaLeft) / plotAreaWidth;
-                const relativeY = (coordinate.y - plotAreaTop) / plotAreaHeight;
-                
-                // Convert to data values (in pounds)
-                const cg = cgRange[0] + relativeX * (cgRange[1] - cgRange[0]);
-                const weightInPounds = weightRange[1] - relativeY * (weightRange[1] - weightRange[0]);
-                
-                // Convert to display units for showing
-                const weightInDisplayUnits = units === 'KG' ? Math.round(weightInPounds * 0.453592) : weightInPounds;
-                
-                // Clamp values to valid ranges
-                const clampedCG = Math.max(cgRange[0], Math.min(cgRange[1], cg));
-                const clampedWeight = Math.max(
-                  units === 'KG' ? Math.round(weightRange[0] * 0.453592) : weightRange[0], 
-                  Math.min(units === 'KG' ? Math.round(weightRange[1] * 0.453592) : weightRange[1], weightInDisplayUnits)
-                );
-                
-                return (
-                  <div className="bg-white p-2 border rounded shadow-lg text-xs">
-                    <p className="font-bold text-blue-800 m-0 mb-1">Cursor Position</p>
-                    <p className="font-semibold m-0">CG: {clampedCG.toFixed(1)}% MAC</p>
-                    <p className="m-0">Weight: {Math.round(clampedWeight).toLocaleString()} {units}</p>
-                  </div>
-                );
-              }
-              return null;
-            }}
-            cursor={{ 
-              strokeDasharray: '2 2', 
-              stroke: '#64748b',
-              strokeWidth: 1
-            }}
-            isAnimationActive={false}
-          />
-          <Legend 
-            layout="horizontal" 
-            align="center" 
-            verticalAlign="bottom"
-            wrapperStyle={{ paddingTop: '20px', fontSize: '11px' }}
-            iconSize={10}
-          />
-          
-          {/* Shaded areas for operational restrictions */}
-          {variant === '200LR' && (
-            <>
-              {/* Main shaded area - "Do not operate in the shaded area during takeoff" */}
-              <ReferenceArea 
-                x1={23} x2={26} 
-                y1={convertWeight(300000)} y2={convertWeight(420000)} 
-                fill="#94a3b8" 
-                fillOpacity={0.3}
-                stroke="none"
-              />
-              {/* Do not operate zone shading - right side */}
-              <ReferenceArea 
-                x1={34.9} x2={50} 
-                y1={convertWeight(347000)} y2={convertWeight(800000)} 
-                fill="#dc2626" 
-                fillOpacity={0.3}
-                stroke="none"
-              />
-            </>
-          )}
-          
-          <Line
-            data={labeledEnvelopeData}
-            type="linear"
-            dataKey="weight"
-            stroke="#2563eb"
-            strokeWidth={2}
-            dot={{ r: 3, fill: "#2563eb" }}
-            name="Normal Operating Envelope"
-            connectNulls
-          />
-          <Line
-            data={envelopeData.doNotOperate}
-            type="linear"
-            dataKey="weight"
-            stroke="#dc2626"
-            strokeWidth={2}
-            dot={false}
-            name="Prohibited Flight Zone"
-            connectNulls
-          />
-          <Line
-            data={envelopeData.maxTaxiWeight}
-            type="linear"
-            dataKey="weight"
-            stroke="#059669"
-            strokeWidth={2}
-            dot={false}
-            name="Max Taxi Weight Limit"
-            connectNulls
-          />
-          <Line
-            data={labeledMaxZeroFuelWeight}
-            type="linear"
-            dataKey="weight"
-            stroke="#0d9488"
-            strokeWidth={2}
-            strokeDasharray="3 3"
-            dot={{ r: 2, fill: "#0d9488" }}
-            name="Max Zero Fuel Weight (Structural)"
-            connectNulls
-          />
-          <Line
-            data={labeledMaxLandingWeight}
-            type="linear"
-            dataKey="weight"
-            stroke="#7c3aed"
-            strokeWidth={2}
-            strokeDasharray="3 3"
-            dot={{ r: 2, fill: "#7c3aed" }}
-            name="Max Landing Weight Limit"
-            connectNulls
-          />
-          {/* 300ER specific lines */}
-          {variant === '300ER' && (
+          <ComposedChart
+            data={[]}
+            margin={{ top: 20, right: 40, left: 60, bottom: 80 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis
+              type="number"
+              dataKey="cg"
+              domain={[0, 50]}
+              label={{
+                value: "Center of Gravity (%MAC)",
+                position: "insideBottom",
+                offset: -5,
+                style: { textAnchor: 'middle', fontWeight: 'bold' }
+              }}
+              ticks={[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50]}
+              allowDataOverflow={true}
+            />
+            <YAxis
+              type="number"
+              domain={[
+                convertWeight(300000),
+                convertWeight(800000)
+              ]}
+              label={{
+                value: `Aircraft Weight (${units.toLowerCase()})`,
+                angle: -90,
+                position: "insideLeft",
+                style: { textAnchor: 'middle', fontWeight: 'bold' }
+              }}
+              tickFormatter={(value) => (value / 1000).toString() + 'K'}
+              allowDataOverflow={true}
+            />
+            <Tooltip
+              content={({ active, coordinate }) => {
+                if (active && coordinate && coordinate.x !== undefined && coordinate.y !== undefined) {
+                  // Get the chart container to calculate relative positions
+                  const chartContainer = chartRef.current;
+                  if (!chartContainer) return null;
+
+                  // Find the actual chart plotting area
+                  const cartesianGrid = chartContainer.querySelector('.recharts-cartesian-grid');
+                  if (!cartesianGrid) return null;
+
+                  const containerRect = chartContainer.getBoundingClientRect();
+                  const gridRect = cartesianGrid.getBoundingClientRect();
+
+                  // Calculate the plotting area dimensions and position
+                  const plotAreaLeft = gridRect.left - containerRect.left;
+                  const plotAreaTop = gridRect.top - containerRect.top;
+                  const plotAreaWidth = gridRect.width;
+                  const plotAreaHeight = gridRect.height;
+
+                  // Convert screen coordinates to data coordinates
+                  const cgRange = [0, 50];
+                  const weightRange = [300000, 800000]; // Base units (pounds) - matches original data
+
+                  // Calculate relative position within the plot area
+                  const relativeX = (coordinate.x - plotAreaLeft) / plotAreaWidth;
+                  const relativeY = (coordinate.y - plotAreaTop) / plotAreaHeight;
+
+                  // Convert to data values (in pounds)
+                  const cg = cgRange[0] + relativeX * (cgRange[1] - cgRange[0]);
+                  const weightInPounds = weightRange[1] - relativeY * (weightRange[1] - weightRange[0]);
+
+                  // Convert to display units for showing
+                  const weightInDisplayUnits = units === 'KG' ? Math.round(weightInPounds * 0.453592) : weightInPounds;
+
+                  // Clamp values to valid ranges
+                  const clampedCG = Math.max(cgRange[0], Math.min(cgRange[1], cg));
+                  const clampedWeight = Math.max(
+                    units === 'KG' ? Math.round(weightRange[0] * 0.453592) : weightRange[0],
+                    Math.min(units === 'KG' ? Math.round(weightRange[1] * 0.453592) : weightRange[1], weightInDisplayUnits)
+                  );
+
+                  return (
+                    <div className="bg-white p-2 border rounded shadow-lg text-xs">
+                      <p className="font-bold text-blue-800 m-0 mb-1">Cursor Position</p>
+                      <p className="font-semibold m-0">CG: {clampedCG.toFixed(1)}% MAC</p>
+                      <p className="m-0">Weight: {Math.round(clampedWeight).toLocaleString()} {units}</p>
+                    </div>
+                  );
+                }
+                return null;
+              }}
+              cursor={{
+                strokeDasharray: '2 2',
+                stroke: '#64748b',
+                strokeWidth: 1
+              }}
+              isAnimationActive={false}
+            />
+            <Legend
+              layout="horizontal"
+              align="center"
+              verticalAlign="bottom"
+              wrapperStyle={{ paddingTop: '20px', fontSize: '11px' }}
+              iconSize={10}
+            />
+
+            {/* Shaded areas for operational restrictions */}
+            {variant === '200LR' && (
+              <>
+                {/* Main shaded area - "Do not operate in the shaded area during takeoff" */}
+                <ReferenceArea
+                  x1={23} x2={26}
+                  y1={convertWeight(300000)} y2={convertWeight(420000)}
+                  fill="#94a3b8"
+                  fillOpacity={0.3}
+                  stroke="none"
+                />
+                {/* Do not operate zone shading - right side */}
+                <ReferenceArea
+                  x1={34.9} x2={50}
+                  y1={convertWeight(347000)} y2={convertWeight(800000)}
+                  fill="#dc2626"
+                  fillOpacity={0.3}
+                  stroke="none"
+                />
+              </>
+            )}
+
             <Line
-              data={ENVELOPES['300ER'].altFwdCGLimitTakeoff1.map(point => ({
-                ...point,
-                weight: convertWeight(point.weight)
-              }))}
+              data={labeledEnvelopeData}
               type="linear"
               dataKey="weight"
-              stroke="#d97706"
+              stroke="#2563eb"
               strokeWidth={2}
-              strokeDasharray="5 5"
-              dot={false}
-              name="Alt Forward CG Limit (Takeoff I)"
+              dot={{ r: 3, fill: "#2563eb" }}
+              name="Normal Operating Envelope"
               connectNulls
             />
-          )}
-          {variant === '300ER' && ENVELOPES['300ER'].altFwdCGLimitTakeoff2 && (
             <Line
-              data={ENVELOPES['300ER'].altFwdCGLimitTakeoff2.map(point => ({
-                ...point,
-                weight: convertWeight(point.weight)
-              }))}
-              type="linear"
-              dataKey="weight"
-              stroke="#9333ea"
-              strokeWidth={2}
-              strokeDasharray="5 5"
-              dot={false}
-              name="Alt Forward CG Limit (Takeoff II)"
-              connectNulls
-            />
-          )}
-          {/* 200LR specific lines */}
-          {variant === '200LR' && (
-            <Line
-              data={ENVELOPES['200LR'].altCGLimitTakeoff1.map(point => ({
-                ...point,
-                weight: convertWeight(point.weight)
-              }))}
+              data={envelopeData.doNotOperate}
               type="linear"
               dataKey="weight"
               stroke="#dc2626"
               strokeWidth={2}
-              strokeDasharray="5 5"
               dot={false}
-              name="Alt CG Limit Takeoff 1 (23%)"
+              name="Prohibited Flight Zone"
               connectNulls
             />
-          )}
-          {variant === '200LR' && (
             <Line
-              data={ENVELOPES['200LR'].altCGLimitTakeoff2.map(point => ({
-                ...point,
-                weight: convertWeight(point.weight)
-              }))}
+              data={envelopeData.maxTaxiWeight}
               type="linear"
               dataKey="weight"
-              stroke="#dc2626"
+              stroke="#059669"
               strokeWidth={2}
-              strokeDasharray="5 5"
               dot={false}
-              name="Alt CG Limit Takeoff 2 (26%)"
+              name="Max Taxi Weight Limit"
               connectNulls
             />
-          )}
-          {variant === '200LR' && loadCheckPolygons.check1.length > 0 && (
-            <Polygon
-              points={loadCheckPolygons.check1.map(point => ({ x: point.cg, y: point.weight }))}
-              fill="#f59e0b"
-              fillOpacity={0.2}
-              stroke="#f59e0b"
+            <Line
+              data={labeledMaxZeroFuelWeight}
+              type="linear"
+              dataKey="weight"
+              stroke="#0d9488"
               strokeWidth={2}
-              strokeDasharray="4 4"
+              strokeDasharray="3 3"
+              dot={{ r: 2, fill: "#0d9488" }}
+              name="Max Zero Fuel Weight (Structural)"
+              connectNulls
             />
-          )}
-          {variant === '200LR' && loadCheckPolygons.check2.length > 0 && (
-            <Polygon
-              points={loadCheckPolygons.check2.map(point => ({ x: point.cg, y: point.weight }))}
-              fill="#f59e0b"
-              fillOpacity={0.15}
-              stroke="#f59e0b"
+            <Line
+              data={labeledMaxLandingWeight}
+              type="linear"
+              dataKey="weight"
+              stroke="#7c3aed"
               strokeWidth={2}
-              strokeDasharray="6 2"
+              strokeDasharray="3 3"
+              dot={{ r: 2, fill: "#7c3aed" }}
+              name="Max Landing Weight Limit"
+              connectNulls
             />
-          )}
-          {/* Opportunity Window - Show CG range at final weight */}
-          {opportunityData && (
-            <>
-              {/* Min CG boundary line at final weight */}
+            {/* 300ER specific lines */}
+            {variant === '300ER' && (
               <Line
-                data={[
-                  { cg: opportunityData.minCG, weight: opportunityData.weight - convertWeight(5000) },
-                  { cg: opportunityData.minCG, weight: opportunityData.weight + convertWeight(5000) }
-                ]}
+                data={ENVELOPES['300ER'].altFwdCGLimitTakeoff1.map(point => ({
+                  ...point,
+                  weight: convertWeight(point.weight)
+                }))}
                 type="linear"
                 dataKey="weight"
-                stroke="#0891b2"
+                stroke="#d97706"
                 strokeWidth={2}
                 strokeDasharray="5 5"
                 dot={false}
-                name="Min Final CG Target"
+                name="Alt Forward CG Limit (Takeoff I)"
                 connectNulls
               />
-              {/* Max CG boundary line at final weight */}
+            )}
+            {variant === '300ER' && ENVELOPES['300ER'].altFwdCGLimitTakeoff2 && (
               <Line
-                data={[
-                  { cg: opportunityData.maxCG, weight: opportunityData.weight - convertWeight(5000) },
-                  { cg: opportunityData.maxCG, weight: opportunityData.weight + convertWeight(5000) }
-                ]}
+                data={ENVELOPES['300ER'].altFwdCGLimitTakeoff2.map(point => ({
+                  ...point,
+                  weight: convertWeight(point.weight)
+                }))}
                 type="linear"
                 dataKey="weight"
-                stroke="#0891b2"
+                stroke="#9333ea"
                 strokeWidth={2}
                 strokeDasharray="5 5"
                 dot={false}
-                name="Max Final CG Target"
+                name="Alt Forward CG Limit (Takeoff II)"
                 connectNulls
               />
-              {/* Filled area showing CG range */}
-              <Area
-                data={[
-                  { cg: opportunityData.minCG, weight: opportunityData.weight, cgRange: 0 },
-                  { cg: opportunityData.minCG, weight: opportunityData.weight, cgRange: opportunityData.cgRange }
-                ]}
+            )}
+            {/* 200LR specific lines */}
+            {variant === '200LR' && (
+              <Line
+                data={ENVELOPES['200LR'].altCGLimitTakeoff1.map(point => ({
+                  ...point,
+                  weight: convertWeight(point.weight)
+                }))}
                 type="linear"
-                dataKey="cgRange"
-                stroke="none"
-                fill="#06b6d4"
-                fillOpacity={0.3}
-                name="Final CG Opportunity Window"
+                dataKey="weight"
+                stroke="#dc2626"
+                strokeWidth={2}
+                strokeDasharray="5 5"
+                dot={false}
+                name="Alt CG Limit Takeoff 1 (23%)"
+                connectNulls
               />
-            </>
-          )}
-          {loadingLine.length > 1 && (
+            )}
+            {variant === '200LR' && (
+              <Line
+                data={ENVELOPES['200LR'].altCGLimitTakeoff2.map(point => ({
+                  ...point,
+                  weight: convertWeight(point.weight)
+                }))}
+                type="linear"
+                dataKey="weight"
+                stroke="#dc2626"
+                strokeWidth={2}
+                strokeDasharray="5 5"
+                dot={false}
+                name="Alt CG Limit Takeoff 2 (26%)"
+                connectNulls
+              />
+            )}
+            {/* Cumulative Load Check 1 - diagonal dotted line */}
             <Line
-              data={loadingLine}
+              data={envelopeData.cumulativeLoadCheck1}
               type="linear"
               dataKey="weight"
-              stroke="#f59e0b"
-              strokeWidth={3}
-              dot={{ r: 4 }}
-              name="Loading Progression Path"
+              stroke="#ff0000ff"
+              strokeWidth={2}
+              strokeDasharray="6 4"
+              dot={{ r: 3, fill: "#ff0000ff" }}
+              name="Cumulative Load Check 1"
               connectNulls
             />
-          )}
-        </ComposedChart>
+            {/* Cumulative Load Check 2 - diagonal dotted line */}
+            <Line
+              data={envelopeData.cumulativeLoadCheck2}
+              type="linear"
+              dataKey="weight"
+              stroke="#ff0000ff"
+              strokeWidth={2}
+              strokeDasharray="6 4"
+              dot={{ r: 3, fill: "#ff0000ff" }}
+              name="Cumulative Load Check 2"
+              connectNulls
+            />
+            {/* Opportunity Window - Show CG range at final weight */}
+            {opportunityData && (
+              <>
+                {/* Min CG boundary line at final weight */}
+                <Line
+                  data={[
+                    { cg: opportunityData.minCG, weight: opportunityData.weight - convertWeight(5000) },
+                    { cg: opportunityData.minCG, weight: opportunityData.weight + convertWeight(5000) }
+                  ]}
+                  type="linear"
+                  dataKey="weight"
+                  stroke="#0891b2"
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  dot={false}
+                  name="Min Final CG Target"
+                  connectNulls
+                />
+                {/* Max CG boundary line at final weight */}
+                <Line
+                  data={[
+                    { cg: opportunityData.maxCG, weight: opportunityData.weight - convertWeight(5000) },
+                    { cg: opportunityData.maxCG, weight: opportunityData.weight + convertWeight(5000) }
+                  ]}
+                  type="linear"
+                  dataKey="weight"
+                  stroke="#0891b2"
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  dot={false}
+                  name="Max Final CG Target"
+                  connectNulls
+                />
+                {/* Filled area showing CG range */}
+                <Area
+                  data={[
+                    { cg: opportunityData.minCG, weight: opportunityData.weight, cgRange: 0 },
+                    { cg: opportunityData.minCG, weight: opportunityData.weight, cgRange: opportunityData.cgRange }
+                  ]}
+                  type="linear"
+                  dataKey="cgRange"
+                  stroke="none"
+                  fill="#06b6d4"
+                  fillOpacity={0.3}
+                  name="Final CG Opportunity Window"
+                />
+              </>
+            )}
+            {loadingLine.length > 1 && (
+              <Line
+                data={loadingLine}
+                type="linear"
+                dataKey="weight"
+                stroke="#f59e0b"
+                strokeWidth={3}
+                dot={{ r: 4 }}
+                name="Loading Progression Path"
+                connectNulls
+              />
+            )}
+          </ComposedChart>
         </ResponsiveContainer>
-        
+
 
         {/* Draggable labels for envelope points */}
         {labeledEnvelopeData.map((point, index) => {
           // Skip empty labels (closure points, etc.)
           if (!point.label) return null;
-          
+
           const pointCoords = dataToScreen(point.cg, point.weight);
           // Skip if coordinates are invalid
           if (pointCoords.x === 0 && pointCoords.y === 0) return null;
-          
+
           const labelId = `envelope-${index}`;
-          const labelPos = labelPositions[labelId] || { 
-            x: pointCoords.x + 10 + (index % 2) * 10, 
-            y: pointCoords.y - 15 - (index % 3) * 20 
+          const labelPos = labelPositions[labelId] || {
+            x: pointCoords.x + 10 + (index % 2) * 10,
+            y: pointCoords.y - 15 - (index % 3) * 20
           };
-          
+
           return (
             <div key={labelId}>
               {/* Leader line for this specific label */}
-              <svg 
-                className="absolute inset-0 pointer-events-none" 
+              <svg
+                className="absolute inset-0 pointer-events-none"
                 style={{ zIndex: 1 }}
-                width="100%" 
+                width="100%"
                 height="100%"
               >
                 <line
@@ -845,7 +855,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
                   opacity="0.8"
                 />
               </svg>
-              
+
               {/* Draggable label */}
               <div
                 className="absolute bg-white border border-blue-300 rounded px-2 py-1 text-xs shadow-md cursor-move select-none"
@@ -866,24 +876,24 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
         {/* Draggable labels for max zero fuel weight */}
         {labeledMaxZeroFuelWeight.map((point, index) => {
           if (!point.label) return null;
-          
+
           const pointCoords = dataToScreen(point.cg, point.weight);
           // Skip if coordinates are invalid
           if (pointCoords.x === 0 && pointCoords.y === 0) return null;
-          
+
           const labelId = `mzfw-${index}`;
-          const labelPos = labelPositions[labelId] || { 
-            x: pointCoords.x - 80, 
-            y: pointCoords.y - 25 
+          const labelPos = labelPositions[labelId] || {
+            x: pointCoords.x - 80,
+            y: pointCoords.y - 25
           };
-          
+
           return (
             <div key={labelId}>
               {/* Leader line for this specific label */}
-              <svg 
-                className="absolute inset-0 pointer-events-none" 
+              <svg
+                className="absolute inset-0 pointer-events-none"
                 style={{ zIndex: 1 }}
-                width="100%" 
+                width="100%"
                 height="100%"
               >
                 <line
@@ -892,12 +902,12 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
                   x2={labelPos.x}
                   y2={labelPos.y}
                   stroke="#0d9488"
-                  strokeWidth="2"
-                  strokeDasharray="3,3"
+                  strokeWidth="1"
+
                   opacity="0.8"
                 />
               </svg>
-              
+
               {/* Draggable label */}
               <div
                 className="absolute bg-white border border-gray-300 rounded px-2 py-1 text-xs shadow-md cursor-move select-none"
@@ -922,24 +932,24 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
         {/* Draggable labels for max landing weight */}
         {labeledMaxLandingWeight.map((point, index) => {
           if (!point.label) return null;
-          
+
           const pointCoords = dataToScreen(point.cg, point.weight);
           // Skip if coordinates are invalid
           if (pointCoords.x === 0 && pointCoords.y === 0) return null;
-          
+
           const labelId = `mlw-${index}`;
-          const labelPos = labelPositions[labelId] || { 
-            x: pointCoords.x + 80, 
-            y: pointCoords.y - 25 
+          const labelPos = labelPositions[labelId] || {
+            x: pointCoords.x + 80,
+            y: pointCoords.y - 25
           };
-          
+
           return (
             <div key={labelId}>
               {/* Leader line for this specific label */}
-              <svg 
-                className="absolute inset-0 pointer-events-none" 
+              <svg
+                className="absolute inset-0 pointer-events-none"
                 style={{ zIndex: 1 }}
-                width="100%" 
+                width="100%"
                 height="100%"
               >
                 <line
@@ -948,12 +958,11 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
                   x2={labelPos.x}
                   y2={labelPos.y}
                   stroke="#7c3aed"
-                  strokeWidth="2"
-                  strokeDasharray="3,3"
+                  strokeWidth="1"
                   opacity="0.8"
                 />
               </svg>
-              
+
               {/* Draggable label */}
               <div
                 className="absolute bg-white border border-gray-300 rounded px-2 py-1 text-xs shadow-md cursor-move select-none"
@@ -980,9 +989,9 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
           const pointCoords = dataToScreen(point.cg, point.weight);
           // Skip if coordinates are invalid
           if (pointCoords.x === 0 && pointCoords.y === 0) return null;
-          
+
           const labelId = `outside-${index}`;
-          
+
           // Position labels outside the envelope based on their position attribute
           let defaultPos = { x: 0, y: 0 };
           switch (point.position) {
@@ -1004,16 +1013,16 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
             default:
               defaultPos = { x: pointCoords.x + 20, y: pointCoords.y - 20 };
           }
-          
+
           const labelPos = labelPositions[labelId] || defaultPos;
-          
+
           return (
             <div key={labelId}>
               {/* Leader line connecting to envelope point */}
-              <svg 
-                className="absolute inset-0 pointer-events-none" 
+              <svg
+                className="absolute inset-0 pointer-events-none"
                 style={{ zIndex: 1 }}
-                width="100%" 
+                width="100%"
                 height="100%"
               >
                 <line
@@ -1026,7 +1035,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
                   opacity="0.6"
                 />
               </svg>
-              
+
               {/* Draggable label */}
               <div
                 className="absolute bg-white border border-gray-300 rounded px-1 py-1 shadow-sm cursor-move select-none"
@@ -1056,20 +1065,20 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
               const pointCoords = dataToScreen(23.0, convertWeight(520000)); // Position on the vertical line
               // Skip if coordinates are invalid
               if (pointCoords.x === 0 && pointCoords.y === 0) return null;
-              
+
               const labelId = 'alt-cg-takeoff-1';
-              const labelPos = labelPositions[labelId] || { 
-                x: pointCoords.x - 50, 
-                y: pointCoords.y - 10 
+              const labelPos = labelPositions[labelId] || {
+                x: pointCoords.x - 50,
+                y: pointCoords.y - 10
               };
-              
+
               return (
                 <div key={labelId}>
                   {/* Leader line */}
-                  <svg 
-                    className="absolute inset-0 pointer-events-none" 
+                  <svg
+                    className="absolute inset-0 pointer-events-none"
                     style={{ zIndex: 1 }}
-                    width="100%" 
+                    width="100%"
                     height="100%"
                   >
                     <line
@@ -1082,7 +1091,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
                       opacity="0.7"
                     />
                   </svg>
-                  
+
                   {/* Draggable label */}
                   <div
                     className="absolute bg-white border border-gray-300 rounded px-1 py-1 shadow-sm cursor-move select-none"
@@ -1099,7 +1108,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
                     onMouseDown={(e) => handleLabelMouseDown(labelId, e)}
                   >
                     <div className="font-normal text-black" style={{ fontSize: '8px' }}>
-                      Alternate CG Limit<br/>Takeoff - 23%
+                      Alternate CG Limit<br />Takeoff - 23%
                     </div>
                   </div>
                 </div>
@@ -1111,20 +1120,20 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
               const pointCoords = dataToScreen(26.0, convertWeight(480000)); // Position on the vertical line
               // Skip if coordinates are invalid
               if (pointCoords.x === 0 && pointCoords.y === 0) return null;
-              
+
               const labelId = 'alt-cg-takeoff-2';
-              const labelPos = labelPositions[labelId] || { 
-                x: pointCoords.x + 50, 
-                y: pointCoords.y - 10 
+              const labelPos = labelPositions[labelId] || {
+                x: pointCoords.x + 50,
+                y: pointCoords.y - 10
               };
-              
+
               return (
                 <div key={labelId}>
                   {/* Leader line */}
-                  <svg 
-                    className="absolute inset-0 pointer-events-none" 
+                  <svg
+                    className="absolute inset-0 pointer-events-none"
                     style={{ zIndex: 1 }}
-                    width="100%" 
+                    width="100%"
                     height="100%"
                   >
                     <line
@@ -1137,7 +1146,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
                       opacity="0.7"
                     />
                   </svg>
-                  
+
                   {/* Draggable label */}
                   <div
                     className="absolute bg-white border border-gray-300 rounded px-1 py-1 shadow-sm cursor-move select-none"
@@ -1154,7 +1163,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
                     onMouseDown={(e) => handleLabelMouseDown(labelId, e)}
                   >
                     <div className="font-normal text-black" style={{ fontSize: '8px' }}>
-                      Alternate CG Limit<br/>Takeoff - 26%
+                      Alternate CG Limit<br />Takeoff - 26%
                     </div>
                   </div>
                 </div>
@@ -1166,20 +1175,20 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
               const pointCoords = dataToScreen(32.0, convertWeight(385000)); // Position in the shaded area
               // Skip if coordinates are invalid
               if (pointCoords.x === 0 && pointCoords.y === 0) return null;
-              
+
               const labelId = 'do-not-operate-zone';
-              const labelPos = labelPositions[labelId] || { 
-                x: pointCoords.x - 20, 
-                y: pointCoords.y - 30 
+              const labelPos = labelPositions[labelId] || {
+                x: pointCoords.x - 20,
+                y: pointCoords.y - 30
               };
-              
+
               return (
                 <div key={labelId}>
                   {/* Leader line */}
-                  <svg 
-                    className="absolute inset-0 pointer-events-none" 
+                  <svg
+                    className="absolute inset-0 pointer-events-none"
                     style={{ zIndex: 1 }}
-                    width="100%" 
+                    width="100%"
                     height="100%"
                   >
                     <line
@@ -1192,7 +1201,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
                       opacity="0.7"
                     />
                   </svg>
-                  
+
                   {/* Draggable label */}
                   <div
                     className="absolute bg-white border border-gray-300 rounded px-1 py-1 shadow-sm cursor-move select-none"
@@ -1209,7 +1218,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
                     onMouseDown={(e) => handleLabelMouseDown(labelId, e)}
                   >
                     <div className="font-normal text-black" style={{ fontSize: '8px' }}>
-                      Do not operate in the<br/>shaded area during takeoff
+                      Do not operate in the<br />shaded area during takeoff
                     </div>
                   </div>
                 </div>
@@ -1217,6 +1226,114 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
             })()}
           </>
         )}
+
+        {/* Cumulative Load Check 1 label */}
+        {(() => {
+          const clc1 = ENVELOPES[variant].cumulativeLoadCheck1;
+          const midCG = (clc1[0].cg + clc1[1].cg) / 2;
+          const midWeight = convertWeight((clc1[0].weight + clc1[1].weight) / 2);
+          const pointCoords = dataToScreen(midCG, midWeight);
+          if (pointCoords.x === 0 && pointCoords.y === 0) return null;
+
+          const labelId = 'clc-1';
+          const labelPos = labelPositions[labelId] || {
+            x: pointCoords.x - 60,
+            y: pointCoords.y - 20
+          };
+
+          return (
+            <div key={labelId}>
+              <svg
+                className="absolute inset-0 pointer-events-none"
+                style={{ zIndex: 1 }}
+                width="100%"
+                height="100%"
+              >
+                <line
+                  x1={pointCoords.x}
+                  y1={pointCoords.y}
+                  x2={labelPos.x + 30}
+                  y2={labelPos.y}
+                  stroke="#ff0000ff"
+                  strokeWidth="1"
+                  opacity="0.7"
+                />
+              </svg>
+              <div
+                className="absolute bg-white border border-red-700 rounded px-1 py-1 shadow-sm cursor-move select-none"
+                style={{
+                  left: labelPos.x,
+                  top: labelPos.y,
+                  zIndex: 10,
+                  transform: 'translate(-50%, -50%)',
+                  fontSize: '8px',
+                  lineHeight: '1.0',
+                  minWidth: '90px',
+                  textAlign: 'center'
+                }}
+                onMouseDown={(e) => handleLabelMouseDown(labelId, e)}
+              >
+                <div className="font-normal text-red-700" style={{ fontSize: '8px' }}>
+                  Cumulative Load<br />Check 1
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Cumulative Load Check 2 label */}
+        {(() => {
+          const clc2 = ENVELOPES[variant].cumulativeLoadCheck2;
+          const midCG = (clc2[0].cg + clc2[1].cg) / 2;
+          const midWeight = convertWeight((clc2[0].weight + clc2[1].weight) / 2);
+          const pointCoords = dataToScreen(midCG, midWeight);
+          if (pointCoords.x === 0 && pointCoords.y === 0) return null;
+
+          const labelId = 'clc-2';
+          const labelPos = labelPositions[labelId] || {
+            x: pointCoords.x + 60,
+            y: pointCoords.y - 20
+          };
+
+          return (
+            <div key={labelId}>
+              <svg
+                className="absolute inset-0 pointer-events-none"
+                style={{ zIndex: 1 }}
+                width="100%"
+                height="100%"
+              >
+                <line
+                  x1={pointCoords.x}
+                  y1={pointCoords.y}
+                  x2={labelPos.x - 30}
+                  y2={labelPos.y}
+                  stroke="#ff0000ff"
+                  strokeWidth="1"
+                  opacity="0.7"
+                />
+              </svg>
+              <div
+                className="absolute bg-white border border-red-700 rounded px-1 py-1 shadow-sm cursor-move select-none"
+                style={{
+                  left: labelPos.x,
+                  top: labelPos.y,
+                  zIndex: 10,
+                  transform: 'translate(-50%, -50%)',
+                  fontSize: '8px',
+                  lineHeight: '1.0',
+                  minWidth: '90px',
+                  textAlign: 'center'
+                }}
+                onMouseDown={(e) => handleLabelMouseDown(labelId, e)}
+              >
+                <div className="font-normal text-red-700" style={{ fontSize: '8px' }}>
+                  Cumulative Load<br />Check 2
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

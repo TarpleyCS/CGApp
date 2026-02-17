@@ -1642,6 +1642,18 @@ export default function WeightCalculator() {
               <div className="space-y-4">
                 {/* Weight Summary */}
                 <div className="space-y-3">
+                  <div className="p-3 border rounded-lg bg-purple-50">
+                    <div className="font-bold text-sm text-black">Payload</div>
+                    <div className="text-xl font-mono text-black">
+                      {new Intl.NumberFormat().format(convertWeight(
+                        testWeights.reduce((sum, w) => sum + w.weight, 0), units
+                      ))} {getWeightUnit(units)}
+                    </div>
+                    <div className="text-xs text-black">
+                      {testWeights.filter(w => w.weight > 0).length} pallet{testWeights.filter(w => w.weight > 0).length !== 1 ? 's' : ''} loaded
+                    </div>
+                  </div>
+
                   <div className="p-3 border rounded-lg bg-blue-50">
                     <div className="font-bold text-sm text-black">ZFW</div>
                     <div className="text-xl font-mono text-black">
