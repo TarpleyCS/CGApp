@@ -609,6 +609,22 @@ export default function WeightCalculator() {
               <div className="space-y-4">
                 {/* Weight Summary */}
                 <div className="space-y-3">
+                  <div className="p-3 border rounded-lg bg-purple-50">
+                    <div className="font-bold text-sm">Payload</div>
+                    <div className="text-xl font-mono">
+                      {formatWeight(
+                        convertWeight(
+                          tableData
+                            .filter(r => r.position !== 'OEW' && r.position !== 'FUEL')
+                            .reduce((sum, r) => sum + r.weight, 0),
+                          'imperial',
+                          unitSystem
+                        ),
+                        unitSystem
+                      )}
+                    </div>
+                  </div>
+
                   <div className="p-3 border rounded-lg bg-blue-50">
                     <div className="font-bold text-sm">ZFW</div>
                     <div className="text-xl font-mono">
