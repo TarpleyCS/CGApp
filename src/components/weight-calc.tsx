@@ -1040,6 +1040,7 @@ export default function WeightCalculator() {
                           loadingPoints={loadingPoints}
                           opportunityWindow={opportunityWindow}
                           units={units}
+                          palletLabels={tableData.map(r => r.position)}
                         />
                       ) : (
                         <WeightChart
@@ -1047,6 +1048,7 @@ export default function WeightCalculator() {
                           loadingPoints={loadingPoints}
                           opportunityWindow={opportunityWindow}
                           units={units}
+                          palletLabels={tableData.map(r => r.position)}
                         />
                       )}
                     </div>

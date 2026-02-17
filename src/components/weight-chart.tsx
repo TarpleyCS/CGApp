@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart, ReferenceArea } from 'recharts';
+import { Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart } from 'recharts';
 import { formatWeight } from '@/lib/units';
 
 interface EnvelopePoint {
@@ -12,6 +12,7 @@ interface WeightChartProps {
   loadingPoints?: EnvelopePoint[];
   opportunityWindow?: EnvelopePoint[];
   units?: 'LB' | 'KG';
+  palletLabels?: string[];
 }
 
 // Envelope data for both variants
@@ -86,17 +87,17 @@ const ENVELOPES = {
       { cg: 37.8, weight: 752000 },
       { cg: 41.2, weight: 705300 },
       { cg: 44.0, weight: 609000 },
-      { cg: 44.0, weight: 471100 },
-      { cg: 43.5, weight: 461000 },
-      { cg: 39.1, weight: 377200 },
       { cg: 34.9, weight: 347000 },
       { cg: 26.0, weight: 310050 },
       { cg: 23.2, weight: 300000 },
       { cg: 14.0, weight: 300000 }
     ],
     doNotOperate: [
-      { cg: 34.9, weight: 347000 },
-      { cg: 44.0, weight: 603000 }
+      { cg: 44.0, weight: 609000 },
+      { cg: 44.0, weight: 471100 },
+      { cg: 43.5, weight: 461000 },
+      { cg: 39.1, weight: 377200 },
+      { cg: 34.9, weight: 347000 }
     ],
     maxLandingWeight: [
       { cg: 16.1, weight: 570000 },
@@ -134,7 +135,7 @@ const ENVELOPES = {
   }
 };
 
-export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindow, units = 'LB' }: WeightChartProps) {
+export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindow, units = 'LB', palletLabels = [] }: WeightChartProps) {
   // State for draggable labels
   const [labelPositions, setLabelPositions] = useState<{ [key: string]: { x: number, y: number } }>({});
   const [isDragging, setIsDragging] = useState(false);
@@ -214,8 +215,9 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
       weight: convertWeight(point.weight)
     })) : [];
 
-  const loadingLine = Array.isArray(convertedLoadingPoints) ?
-    [envelopeData.OEW, ...convertedLoadingPoints] :
+  // loadingPoints from calculateCumulativeWeights already includes OEW as the first point
+  const loadingLine = convertedLoadingPoints.length > 0 ?
+    convertedLoadingPoints :
     [envelopeData.OEW];
 
   // Process opportunity window for final weight CG range visualization
@@ -385,13 +387,11 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
       { cg: 30.6, weight: convertWeight(768000), label: `${formatWeight(convertWeight(768000), units)}\nat 30.6%`, position: 'top' },
       { cg: 37.8, weight: convertWeight(752000), label: `${formatWeight(convertWeight(752000), units)}\nat 37.8%`, position: 'right' },
 
-      // Right side labels  
+      // Right side labels
       { cg: 41.2, weight: convertWeight(705300), label: `${formatWeight(convertWeight(705300), units)}\nat 41.2%`, position: 'right' },
       { cg: 44.0, weight: convertWeight(609000), label: `${formatWeight(convertWeight(609000), units)}\nat 44.0%`, position: 'right' },
-      { cg: 44.0, weight: convertWeight(471100), label: `${formatWeight(convertWeight(471100), units)}\nat 44.0%`, position: 'right' },
 
       // Bottom right
-      { cg: 39.1, weight: convertWeight(377200), label: `${formatWeight(convertWeight(377200), units)}\nat 39.1%`, position: 'bottom-right' },
       { cg: 34.9, weight: convertWeight(347000), label: `${formatWeight(convertWeight(347000), units)}\nat 34.9%`, position: 'bottom' },
 
       // Left side labels
@@ -567,11 +567,43 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
                     Math.min(units === 'KG' ? Math.round(weightRange[1] * 0.453592) : weightRange[1], weightInDisplayUnits)
                   );
 
+                  // Check if cursor is near a loading point
+                  const findNearestPallet = () => {
+                    if (loadingLine.length <= 1 || palletLabels.length === 0) return null;
+                    const cgPixelScale = plotAreaWidth / (cgRange[1] - cgRange[0]);
+                    const weightPixelScale = plotAreaHeight / (weightRange[1] - weightRange[0]);
+                    let minDist = Infinity;
+                    let result: { label: string; cg: number; weight: number } | null = null;
+
+                    loadingLine.forEach((pt, i) => {
+                      const dxPx = (cg - pt.cg) * cgPixelScale;
+                      const dyPx = ((units === 'KG' ? pt.weight / 0.453592 : pt.weight) - weightInPounds) * weightPixelScale;
+                      const dist = Math.sqrt(dxPx * dxPx + dyPx * dyPx);
+                      if (dist < minDist && dist < 30) {
+                        minDist = dist;
+                        result = {
+                          label: palletLabels[i] || `Point ${i}`,
+                          cg: pt.cg,
+                          weight: pt.weight
+                        };
+                      }
+                    });
+                    return result;
+                  };
+                  const nearestPallet = findNearestPallet();
+
                   return (
                     <div className="bg-white p-2 border rounded shadow-lg text-xs">
                       <p className="font-bold text-blue-800 m-0 mb-1">Cursor Position</p>
                       <p className="font-semibold m-0">CG: {clampedCG.toFixed(1)}% MAC</p>
                       <p className="m-0">Weight: {Math.round(clampedWeight).toLocaleString()} {units}</p>
+                      {nearestPallet !== null && (
+                        <div className="mt-1 pt-1 border-t border-gray-200">
+                          <p className="font-bold text-amber-700 m-0">{(nearestPallet as { label: string; cg: number; weight: number }).label}</p>
+                          <p className="m-0 text-gray-600">CG: {(nearestPallet as { label: string; cg: number; weight: number }).cg.toFixed(2)}% MAC</p>
+                          <p className="m-0 text-gray-600">Weight: {Math.round((nearestPallet as { label: string; cg: number; weight: number }).weight).toLocaleString()} {units}</p>
+                        </div>
+                      )}
                     </div>
                   );
                 }
@@ -592,27 +624,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
               iconSize={10}
             />
 
-            {/* Shaded areas for operational restrictions */}
-            {variant === '200LR' && (
-              <>
-                {/* Main shaded area - "Do not operate in the shaded area during takeoff" */}
-                <ReferenceArea
-                  x1={23} x2={26}
-                  y1={convertWeight(300000)} y2={convertWeight(420000)}
-                  fill="#94a3b8"
-                  fillOpacity={0.3}
-                  stroke="none"
-                />
-                {/* Do not operate zone shading - right side */}
-                <ReferenceArea
-                  x1={34.9} x2={50}
-                  y1={convertWeight(347000)} y2={convertWeight(800000)}
-                  fill="#dc2626"
-                  fillOpacity={0.3}
-                  stroke="none"
-                />
-              </>
-            )}
+            {/* Do-not-operate zone shading rendered via SVG overlay below */}
 
             <Line
               data={labeledEnvelopeData}
@@ -819,6 +831,39 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
           </ComposedChart>
         </ResponsiveContainer>
 
+        {/* Do-not-operate zone shading — SVG polygon overlay */}
+        {(() => {
+          // The zone is bounded by:
+          // - The straight envelope edge: (44.0, 609000) → (34.9, 347000)
+          // - The do-not-operate line (notched boundary) back to start
+          const dnoData = ENVELOPES[variant].doNotOperate;
+          const vertices = [
+            // Start at the top where both lines meet
+            dataToScreen(44.0, convertWeight(609000)),
+            // Along the straight envelope edge to bottom
+            dataToScreen(34.9, convertWeight(347000)),
+            // Back along the do-not-operate boundary (skip first & last since they match the envelope corners)
+            ...dnoData.slice(0).reverse().slice(0, -1).map(pt => dataToScreen(pt.cg, convertWeight(pt.weight)))
+          ];
+          // Skip if coordinates haven't resolved yet
+          if (vertices.some(v => v.x === 0 && v.y === 0)) return null;
+          const pointsStr = vertices.map(v => `${v.x},${v.y}`).join(' ');
+          return (
+            <svg
+              className="absolute inset-0 pointer-events-none"
+              style={{ zIndex: 0 }}
+              width="100%"
+              height="100%"
+            >
+              <polygon
+                points={pointsStr}
+                fill="#dc2626"
+                fillOpacity={0.15}
+                stroke="none"
+              />
+            </svg>
+          );
+        })()}
 
         {/* Draggable labels for envelope points */}
         {labeledEnvelopeData.map((point, index) => {
@@ -1170,60 +1215,6 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
               );
             })()}
 
-            {/* Do Not Operate Zone label */}
-            {(() => {
-              const pointCoords = dataToScreen(32.0, convertWeight(385000)); // Position in the shaded area
-              // Skip if coordinates are invalid
-              if (pointCoords.x === 0 && pointCoords.y === 0) return null;
-
-              const labelId = 'do-not-operate-zone';
-              const labelPos = labelPositions[labelId] || {
-                x: pointCoords.x - 20,
-                y: pointCoords.y - 30
-              };
-
-              return (
-                <div key={labelId}>
-                  {/* Leader line */}
-                  <svg
-                    className="absolute inset-0 pointer-events-none"
-                    style={{ zIndex: 1 }}
-                    width="100%"
-                    height="100%"
-                  >
-                    <line
-                      x1={pointCoords.x}
-                      y1={pointCoords.y}
-                      x2={labelPos.x + 10}
-                      y2={labelPos.y + 20}
-                      stroke="#000000"
-                      strokeWidth="1"
-                      opacity="0.7"
-                    />
-                  </svg>
-
-                  {/* Draggable label */}
-                  <div
-                    className="absolute bg-white border border-gray-300 rounded px-1 py-1 shadow-sm cursor-move select-none"
-                    style={{
-                      left: labelPos.x,
-                      top: labelPos.y,
-                      zIndex: 10,
-                      transform: 'translate(-50%, -50%)',
-                      fontSize: '8px',
-                      lineHeight: '1.0',
-                      minWidth: '85px',
-                      textAlign: 'center'
-                    }}
-                    onMouseDown={(e) => handleLabelMouseDown(labelId, e)}
-                  >
-                    <div className="font-normal text-black" style={{ fontSize: '8px' }}>
-                      Do not operate in the<br />shaded area during takeoff
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
           </>
         )}
 
