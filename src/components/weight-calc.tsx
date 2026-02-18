@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { LoadingGrid } from './loading-grid';
-import { WeightChart} from './weight-chart';
+import { WeightChart } from './weight-chart';
 import { LoadingTable } from './loading-table';
 import { AnalyticsDashboard } from './analytics-dashboard';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,9 +13,9 @@ import { convertWeight, getWeightUnit } from '@/lib/units';
 // Import shared constants and utilities
 import { OEW_DATA, LOADING_PATTERNS, POSITION_MAP, BOEING_PALLET_SPECS, CUSTOM_PALLET_POSITIONS } from '@/lib/constants';
 import { useLoadingPatterns, useOptimizationHistory, usePatternRankings, useCustomPositions, useCustomPalletStyles } from '@/hooks/useDatabase';
-import { 
-  calculateCumulativeWeights, 
-  addFuelToCalculation, 
+import {
+  calculateCumulativeWeights,
+  addFuelToCalculation,
   getFuelArm,
   type WeightData,
   type LoadingPoint,
@@ -35,42 +35,44 @@ import {
 
 
 export default function WeightCalculator() {
-  const [variant, setVariant] = useState<'300ER' | '200LR'>('300ER');
+  const [variant, setVariant] = useState<'300ER' | '200LR'>('200LR');
   const [units, setUnits] = useState<'LB' | 'KG'>('LB');
   const [selectedPattern, setSelectedPattern] = useState('default');
   const [loadingPoints, setLoadingPoints] = useState<LoadingPoint[]>([
     { cg: OEW_DATA[variant].cg, weight: OEW_DATA[variant].weight }
   ]);
   const [fuelLoaded, setFuelLoaded] = useState(false);
-  const [fuelWeight, setFuelWeight] = useState(0);
+  const [fuelGallons, setFuelGallons] = useState(0);
   const [tableData, setTableData] = useState<CalculationResult[]>([]);
   const [testWeights, setTestWeights] = useState<WeightData[]>([]);
   const [opportunityWindow, setOpportunityWindow] = useState<LoadingPoint[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [customPatterns, setCustomPatterns] = useState<{[key: string]: string[]}>({});
+  const [customPatterns, setCustomPatterns] = useState<{ [key: string]: string[] }>({});
   const [newPatternName, setNewPatternName] = useState('');
   const [newPatternOrder, setNewPatternOrder] = useState<string[]>([]);
   const [isCreatingPattern, setIsCreatingPattern] = useState(false);
-  
+
   // Database hooks
   const { patterns: dbPatterns, savePattern } = useLoadingPatterns();
   const { saveOptimization } = useOptimizationHistory();
   const { updateRanking } = usePatternRankings();
   const { positions: dbCustomPositions, savePosition: saveCustomPosition } = useCustomPositions();
   const { styles: dbCustomPalletStyles, saveStyle: saveCustomPalletStyle } = useCustomPalletStyles();
-  
+
   // Pattern rating state - reserved for future use
   // const [patternRatings, setPatternRatings] = useState<{[key: string]: number}>({});
   // const [showRatingDialog, setShowRatingDialog] = useState<string | null>(null);
-  
+
   // Pallet style management
-  const [customPalletStyles, setCustomPalletStyles] = useState<{[key: string]: {
-    description: string;
-    maxWeight: number;
-    dimensions: string;
-    momentMultiplier: number;
-    category: string;
-  }}>({});
+  const [customPalletStyles, setCustomPalletStyles] = useState<{
+    [key: string]: {
+      description: string;
+      maxWeight: number;
+      dimensions: string;
+      momentMultiplier: number;
+      category: string;
+    }
+  }>({});
   const [newPalletName, setNewPalletName] = useState('');
   const [newPalletDescription, setNewPalletDescription] = useState('');
   const [newPalletMaxWeight, setNewPalletMaxWeight] = useState(0);
@@ -78,13 +80,15 @@ export default function WeightCalculator() {
   const [newPalletMomentMultiplier, setNewPalletMomentMultiplier] = useState(1.0);
   const [newPalletCategory, setNewPalletCategory] = useState('Container');
   const [isCreatingPallet, setIsCreatingPallet] = useState(false);
-  
+
   // Custom pallet position management
-  const [customPalletPositions, setCustomPalletPositions] = useState<{[key: string]: {
-    name: string;
-    momentArm: number;
-    palletType: string;
-  }}>({});
+  const [customPalletPositions, setCustomPalletPositions] = useState<{
+    [key: string]: {
+      name: string;
+      momentArm: number;
+      palletType: string;
+    }
+  }>({});
   const [newPositionCode, setNewPositionCode] = useState('');
   const [newPositionName, setNewPositionName] = useState('');
   const [newPositionMomentArm, setNewPositionMomentArm] = useState(0);
@@ -95,13 +99,13 @@ export default function WeightCalculator() {
   const handleCompute = (weights: WeightData[]) => {
     // Reset fuel state when weights change
     setFuelLoaded(false);
-    setFuelWeight(0);
-    
+    setFuelGallons(0);
+
     const { results, loadingPoints: points } = calculateCumulativeWeights(weights, variant);
-    
+
     setLoadingPoints(points);
     setTableData(results);
-    
+
     // Calculate opportunity window if we have weights
     if (weights.length > 1 && weights.some(w => w.weight > 0)) {
       const windowPoints = calculateOpportunityWindow(weights);
@@ -111,14 +115,14 @@ export default function WeightCalculator() {
     }
   };
 
-  const handleFuelLoad = (weight: number) => {
-    if (weight <= 0) return;
-    setFuelWeight(weight);
-    
+  const handleFuelLoad = (gallons: number) => {
+    if (gallons <= 0) return;
+    setFuelGallons(gallons);
+
     const lastResult = tableData[tableData.length - 1];
-    const { result, loadingPoint } = addFuelToCalculation(lastResult, weight);
-    
-    setLoadingPoints([...loadingPoints, loadingPoint]);
+    const { result, loadingPoints: fuelPoints } = addFuelToCalculation(lastResult, gallons);
+
+    setLoadingPoints([...loadingPoints, ...fuelPoints]);
     setTableData([...tableData, result]);
     setFuelLoaded(true);
   };
@@ -137,7 +141,7 @@ export default function WeightCalculator() {
 
   // Simple point-in-polygon check for CG envelope
   const isPointInEnvelope = (cg: number, weight: number): boolean => {
-    const envelope = variant === '300ER' ? 
+    const envelope = variant === '300ER' ?
       [
         { cg: 14.0, weight: 300000 },
         { cg: 14.0, weight: 460000 },
@@ -174,17 +178,17 @@ export default function WeightCalculator() {
     // For now, do a simplified envelope check
     const maxWeightForCG = getMaxWeightForCG(cg, envelope);
     const minWeightForCG = getMinWeightForCG(cg, envelope);
-    
+
     return weight >= minWeightForCG && weight <= maxWeightForCG;
   };
 
-  const getMaxWeightForCG = (targetCG: number, envelope: Array<{cg: number, weight: number}>): number => {
+  const getMaxWeightForCG = (targetCG: number, envelope: Array<{ cg: number, weight: number }>): number => {
     // Find the maximum weight allowed for a given CG
     let maxWeight = 0;
     for (let i = 0; i < envelope.length - 1; i++) {
       const p1 = envelope[i];
       const p2 = envelope[i + 1];
-      
+
       if ((p1.cg <= targetCG && targetCG <= p2.cg) || (p2.cg <= targetCG && targetCG <= p1.cg)) {
         // Interpolate weight for this CG
         const ratio = (targetCG - p1.cg) / (p2.cg - p1.cg);
@@ -195,13 +199,13 @@ export default function WeightCalculator() {
     return maxWeight || 768000; // Default max if not found
   };
 
-  const getMinWeightForCG = (targetCG: number, envelope: Array<{cg: number, weight: number}>): number => {
+  const getMinWeightForCG = (targetCG: number, envelope: Array<{ cg: number, weight: number }>): number => {
     // Find the minimum weight allowed for a given CG
     let minWeight = Infinity;
     for (let i = 0; i < envelope.length - 1; i++) {
       const p1 = envelope[i];
       const p2 = envelope[i + 1];
-      
+
       if ((p1.cg <= targetCG && targetCG <= p2.cg) || (p2.cg <= targetCG && targetCG <= p1.cg)) {
         // Interpolate weight for this CG
         const ratio = (targetCG - p1.cg) / (p2.cg - p1.cg);
@@ -236,37 +240,37 @@ export default function WeightCalculator() {
 
       // Calculate the result for this arrangement
       const { loadingPoints: points } = calculateCumulativeWeights(shuffledWeights, variant);
-      
+
       if (points.length < 2) continue;
-      
+
       // Focus primarily on final CG position (last point in loading sequence)
       const finalPoint = points[points.length - 1];
       let score = 0;
       let finalViolation = 0;
-      
+
       // Heavy penalty if final CG is out of envelope
       if (!isPointInEnvelope(finalPoint.cg, finalPoint.weight)) {
-        const envelope = variant === '300ER' ? 
-          [{ cg: 14.0, weight: 300000 }, { cg: 44.0, weight: 609000 }] : 
+        const envelope = variant === '300ER' ?
+          [{ cg: 14.0, weight: 300000 }, { cg: 44.0, weight: 609000 }] :
           [{ cg: 14.0, weight: 250000 }, { cg: 44.0, weight: 565000 }];
         const maxAllowed = getMaxWeightForCG(finalPoint.cg, envelope);
         finalViolation = Math.abs(finalPoint.weight - maxAllowed);
         score += 1000000; // Heavy penalty for final CG violation
       }
-      
+
       // Secondary consideration: intermediate points
       let intermediateViolations = 0;
       points.forEach((point, index) => {
         if (index === 0 || index === points.length - 1) return; // Skip OEW and final point
-        
+
         if (!isPointInEnvelope(point.cg, point.weight)) {
           intermediateViolations += 1;
         }
       });
-      
+
       // Prefer arrangements that keep final CG in bounds, then minimize intermediate violations
       const totalScore = score + (finalViolation * 10000) + (intermediateViolations * 1000);
-      
+
       if (totalScore < bestScore) {
         bestScore = totalScore;
         bestWeights = [...shuffledWeights];
@@ -308,7 +312,7 @@ export default function WeightCalculator() {
     );
 
     const result = optimizeCargoWithPSO(currentWeights, config, fitnessFunction);
-    
+
     setTestWeights(result.bestArrangement);
     handleCompute(result.bestArrangement);
 
@@ -345,7 +349,7 @@ export default function WeightCalculator() {
     );
 
     const result = optimizeCargoWithILP(currentWeights, config, objectiveFunction, constraintFunction);
-    
+
     setTestWeights(result.optimalArrangement);
     handleCompute(result.optimalArrangement);
 
@@ -392,7 +396,7 @@ export default function WeightCalculator() {
     e.preventDefault();
     const dragData = JSON.parse(e.dataTransfer.getData('text/plain'));
     const { position, index: sourceIndex } = dragData;
-    
+
     if (sourceIndex !== targetIndex) {
       const newOrder = [...newPatternOrder];
       // Remove from source position
@@ -408,7 +412,7 @@ export default function WeightCalculator() {
     e.preventDefault();
     const dragData = JSON.parse(e.dataTransfer.getData('text/plain'));
     const { position, index: sourceIndex } = dragData;
-    
+
     if (sourceIndex !== targetIndex) {
       const newOrder = [...newPatternOrder];
       // Remove from source position
@@ -429,7 +433,7 @@ export default function WeightCalculator() {
         [newPatternName.trim()]: [...newPatternOrder]
       };
       setCustomPatterns(updatedPatterns);
-      
+
       // Save to database
       try {
         await savePattern({
@@ -447,7 +451,7 @@ export default function WeightCalculator() {
       } catch (error) {
         console.error('Failed to save pattern to database:', error);
       }
-      
+
       setIsCreatingPattern(false);
       setNewPatternName('');
       setNewPatternOrder([]);
@@ -465,8 +469,8 @@ export default function WeightCalculator() {
     const dbPatternMap = dbPatterns.reduce((acc, pattern) => {
       acc[pattern.name] = pattern.sequence;
       return acc;
-    }, {} as {[key: string]: string[]});
-    
+    }, {} as { [key: string]: string[] });
+
     return { ...LOADING_PATTERNS, ...customPatterns, ...dbPatternMap };
   };
 
@@ -495,7 +499,7 @@ export default function WeightCalculator() {
         }
       };
       setCustomPalletStyles(updatedPallets);
-      
+
       // Save to database
       try {
         await saveCustomPalletStyle({
@@ -512,7 +516,7 @@ export default function WeightCalculator() {
       } catch (error) {
         console.error('Failed to save pallet style to database:', error);
       }
-      
+
       setIsCreatingPallet(false);
       handleCancelPalletCreation();
     }
@@ -561,7 +565,7 @@ export default function WeightCalculator() {
         }
       };
       setCustomPalletPositions(updatedPositions);
-      
+
       // Save to database
       try {
         await saveCustomPosition({
@@ -576,7 +580,7 @@ export default function WeightCalculator() {
       } catch (error) {
         console.error('Failed to save custom position to database:', error);
       }
-      
+
       setIsCreatingPosition(false);
       handleCancelPositionCreation();
     }
@@ -614,7 +618,7 @@ export default function WeightCalculator() {
   ) => {
     const endTime = Date.now();
     const optimizationTime = endTime - startTime;
-    
+
     // Find or create pattern in database
     let patternId = dbPatterns.find(p => p.name === patternName)?.id;
     if (!patternId) {
@@ -635,10 +639,10 @@ export default function WeightCalculator() {
     // Calculate initial and final CG
     const initialResults = calculateCumulativeWeights(initialWeights, variant);
     const finalResults = calculateCumulativeWeights(finalWeights, variant);
-    
+
     const initialCG = initialResults.loadingPoints[initialResults.loadingPoints.length - 1]?.cg || 0;
     const finalCG = finalResults.loadingPoints[finalResults.loadingPoints.length - 1]?.cg || 0;
-    
+
     // Count envelope violations
     const envelopeViolations = finalResults.loadingPoints.filter(
       point => !isPointInEnvelope(point.cg, point.weight)
@@ -657,7 +661,7 @@ export default function WeightCalculator() {
       envelope_violations: envelopeViolations,
       success,
       created_at: new Date(),
-      fuel_weight: fuelWeight,
+      fuel_weight: fuelGallons * 6.7,
       total_weight: finalResults.loadingPoints[finalResults.loadingPoints.length - 1]?.weight || 0,
       cg_improvement: Math.abs(finalCG - initialCG),
       notes: `${method} optimization ${success ? 'successful' : 'failed'}`
@@ -681,14 +685,14 @@ export default function WeightCalculator() {
 
     // Generate multiple arrangements to find min/max CG for the FINAL weight only
     const arrangements: WeightData[][] = [];
-    
+
     // Add current arrangement
     arrangements.push([...weights]);
-    
+
     // Generate systematic arrangements to explore CG range
     const factorial = (n: number): number => n <= 1 ? 1 : n * factorial(n - 1);
     const numArrangements = Math.min(100, factorial(Math.min(weights.length, 7))); // Limit to prevent too many calculations
-    
+
     for (let i = 0; i < numArrangements; i++) {
       const shuffled = [...weights];
       // Use different shuffling strategies
@@ -721,13 +725,13 @@ export default function WeightCalculator() {
           [shuffled[j].weight, shuffled[k].weight] = [shuffled[k].weight, shuffled[j].weight];
         }
       }
-      
+
       // Reassign positions based on pattern
       const arrangedWeights = shuffled.map((w, idx) => ({
         ...w,
         position: pattern[idx]
       }));
-      
+
       arrangements.push(arrangedWeights);
     }
 
@@ -735,7 +739,7 @@ export default function WeightCalculator() {
     let minFinalCG = Infinity;
     let maxFinalCG = -Infinity;
     let finalWeight = 0;
-    
+
     arrangements.forEach(arrangement => {
       const { loadingPoints: points } = calculateCumulativeWeights(arrangement, variant);
       if (points.length > 1) {
@@ -768,10 +772,10 @@ export default function WeightCalculator() {
 
     // Generate multiple arrangements to find the one with max forward or aft CG
     const numArrangements = Math.min(200, 5040); // Limit to prevent excessive calculations
-    
+
     for (let attempt = 0; attempt < numArrangements; attempt++) {
       const shuffled = [...currentWeights];
-      
+
       if (attempt === 0) {
         // First attempt: current arrangement
         // Do nothing, keep current order
@@ -804,13 +808,13 @@ export default function WeightCalculator() {
 
       // Calculate the final CG for this arrangement
       const { loadingPoints: points } = calculateCumulativeWeights(arrangedWeights, variant);
-      
+
       if (points.length > 1) {
         const finalPoint = points[points.length - 1];
-        const isNewBest = direction === 'forward' ? 
-          finalPoint.cg > bestCG : 
+        const isNewBest = direction === 'forward' ?
+          finalPoint.cg > bestCG :
           finalPoint.cg < bestCG;
-        
+
         if (isNewBest) {
           bestCG = finalPoint.cg;
           bestWeights = [...arrangedWeights];
@@ -832,41 +836,41 @@ export default function WeightCalculator() {
           {!sidebarCollapsed && (
             <div className="flex-1 mr-2 min-w-0">
               <h1 className="text-sm sm:text-base md:text-lg lg:text-xl font-bold text-gray-900 truncate">777 Weight & Balance</h1>
-              
+
               {/* Aircraft Variant Selection */}
               <div className="flex gap-1 sm:gap-2 mt-2 sm:mt-3">
-            <Button
-              onClick={() => {
-                setVariant('300ER');
-                setLoadingPoints([{ cg: OEW_DATA['300ER'].cg, weight: OEW_DATA['300ER'].weight }]);
-                setTableData([]);
-                setFuelLoaded(false);
-                setFuelWeight(0);
-                setTestWeights([]);
-                setOpportunityWindow([]);
-              }}
-              variant={variant === '300ER' ? 'default' : 'outline'}
-              size="sm"
-              className="text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2 flex-1"
-            >
-              <span className="hidden sm:inline">777-</span>300ER
-            </Button>
-            <Button
-              onClick={() => {
-                setVariant('200LR');
-                setLoadingPoints([{ cg: OEW_DATA['200LR'].cg, weight: OEW_DATA['200LR'].weight }]);
-                setTableData([]);
-                setFuelLoaded(false);
-                setFuelWeight(0);
-                setTestWeights([]);
-                setOpportunityWindow([]);
-              }}
-              variant={variant === '200LR' ? 'default' : 'outline'}
-              size="sm"
-              className="text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2 flex-1"
-            >
-              <span className="hidden sm:inline">777-</span>200LR
-            </Button>
+                <Button
+                  onClick={() => {
+                    setVariant('200LR');
+                    setLoadingPoints([{ cg: OEW_DATA['200LR'].cg, weight: OEW_DATA['200LR'].weight }]);
+                    setTableData([]);
+                    setFuelLoaded(false);
+                    setFuelGallons(0);
+                    setTestWeights([]);
+                    setOpportunityWindow([]);
+                  }}
+                  variant={variant === '200LR' ? 'default' : 'outline'}
+                  size="sm"
+                  className="text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2 flex-1"
+                >
+                  <span className="hidden sm:inline">777-</span>200LR
+                </Button>
+                <Button
+                  onClick={() => {
+                    setVariant('300ER');
+                    setLoadingPoints([{ cg: OEW_DATA['300ER'].cg, weight: OEW_DATA['300ER'].weight }]);
+                    setTableData([]);
+                    setFuelLoaded(false);
+                    setFuelGallons(0);
+                    setTestWeights([]);
+                    setOpportunityWindow([]);
+                  }}
+                  variant={variant === '300ER' ? 'default' : 'outline'}
+                  size="sm"
+                  className="text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2 flex-1"
+                >
+                  <span className="hidden sm:inline">777-</span>200LR
+                </Button>
               </div>
             </div>
           )}
@@ -885,130 +889,130 @@ export default function WeightCalculator() {
         {/* Controls */}
         {!sidebarCollapsed && (
           <div className="p-2 sm:p-4 border-b border-gray-200 space-y-2 sm:space-y-3">
-          <div>
-            <label className="text-sm font-medium text-black mb-2 block">Loading Pattern</label>
-            <select
-              className="w-full px-3 py-2 border rounded-md text-black text-sm"
-              value={selectedPattern}
-              onChange={(e) => {
-                setSelectedPattern(e.target.value);
-                setTableData([]);
-                setLoadingPoints([{ 
-                  cg: OEW_DATA[variant].cg,
-                  weight: OEW_DATA[variant].weight 
-                }]);
-                setFuelLoaded(false);
-                setFuelWeight(0);
-                setTestWeights([]);
-                setOpportunityWindow([]);
-              }}
-            >
-              <option value="default">Default Loading Pattern</option>
-              <option value="forward">Forward Loading</option>
-              <option value="aft">Aft Loading</option>
-              <option value="balanced">Balanced Loading</option>
-              {Object.keys(customPatterns).map(patternName => (
-                <option key={patternName} value={patternName}>
-                  {patternName} (Custom)
-                </option>
-              ))}
-              {dbPatterns.map(pattern => (
-                <option key={pattern.name} value={pattern.name}>
-                  {pattern.name}
-                </option>
-              ))}
-            </select>
-          </div>
+            <div>
+              <label className="text-sm font-medium text-black mb-2 block">Loading Pattern</label>
+              <select
+                className="w-full px-3 py-2 border rounded-md text-black text-sm"
+                value={selectedPattern}
+                onChange={(e) => {
+                  setSelectedPattern(e.target.value);
+                  setTableData([]);
+                  setLoadingPoints([{
+                    cg: OEW_DATA[variant].cg,
+                    weight: OEW_DATA[variant].weight
+                  }]);
+                  setFuelLoaded(false);
+                  setFuelGallons(0);
+                  setTestWeights([]);
+                  setOpportunityWindow([]);
+                }}
+              >
+                <option value="default">Default Loading Pattern</option>
+                <option value="forward">Forward Loading</option>
+                <option value="aft">Aft Loading</option>
+                <option value="balanced">Balanced Loading</option>
+                {Object.keys(customPatterns).map(patternName => (
+                  <option key={patternName} value={patternName}>
+                    {patternName} (Custom)
+                  </option>
+                ))}
+                {dbPatterns.map(pattern => (
+                  <option key={pattern.name} value={pattern.name}>
+                    {pattern.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div>
-            <label className="text-sm font-medium text-black mb-2 block">Display Units</label>
-            <select
-              className="w-full px-3 py-2 border rounded-md text-black text-sm"
-              value={units}
-              onChange={(e) => setUnits(e.target.value as 'LB' | 'KG')}
-            >
-              <option value="LB">Pounds (LB)</option>
-              <option value="KG">Kilograms (KG)</option>
-            </select>
-          </div>
+            <div>
+              <label className="text-sm font-medium text-black mb-2 block">Display Units</label>
+              <select
+                className="w-full px-3 py-2 border rounded-md text-black text-sm"
+                value={units}
+                onChange={(e) => setUnits(e.target.value as 'LB' | 'KG')}
+              >
+                <option value="LB">Pounds (LB)</option>
+                <option value="KG">Kilograms (KG)</option>
+              </select>
+            </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              onClick={handleTestFill}
-              variant="outline"
-              size="sm"
-              className="bg-blue-50 hover:bg-blue-100 text-black text-xs sm:text-sm"
-            >
-              Test Fill
-            </Button>
-            <Button
-              onClick={handleOptimize}
-              variant="outline"
-              size="sm"
-              className="bg-green-50 hover:bg-green-100 text-black text-xs sm:text-sm"
-              disabled={tableData.length === 0}
-            >
-              Optimize
-            </Button>
-          </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={handleTestFill}
+                variant="outline"
+                size="sm"
+                className="bg-blue-50 hover:bg-blue-100 text-black text-xs sm:text-sm"
+              >
+                Test Fill
+              </Button>
+              <Button
+                onClick={handleOptimize}
+                variant="outline"
+                size="sm"
+                className="bg-green-50 hover:bg-green-100 text-black text-xs sm:text-sm"
+                disabled={tableData.length === 0}
+              >
+                Optimize
+              </Button>
+            </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              onClick={handleOptimizePSO}
-              variant="outline"
-              size="sm"
-              className="bg-red-50 hover:bg-red-100 text-black text-xs sm:text-sm"
-              disabled={tableData.length === 0}
-            >
-              PSO
-            </Button>
-            <Button
-              onClick={handleOptimizeILP}
-              variant="outline"
-              size="sm"
-              className="bg-indigo-50 hover:bg-indigo-100 text-black text-xs sm:text-sm"
-              disabled={tableData.length === 0}
-            >
-              ILP
-            </Button>
-          </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={handleOptimizePSO}
+                variant="outline"
+                size="sm"
+                className="bg-red-50 hover:bg-red-100 text-black text-xs sm:text-sm"
+                disabled={tableData.length === 0}
+              >
+                PSO
+              </Button>
+              <Button
+                onClick={handleOptimizeILP}
+                variant="outline"
+                size="sm"
+                className="bg-indigo-50 hover:bg-indigo-100 text-black text-xs sm:text-sm"
+                disabled={tableData.length === 0}
+              >
+                ILP
+              </Button>
+            </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              onClick={() => handleOpportunitySelect('forward')}
-              variant="outline"
-              size="sm"
-              className="bg-purple-50 hover:bg-purple-100 text-black text-xs sm:text-sm"
-              disabled={opportunityWindow.length === 0}
-            >
-              Max Fwd CG
-            </Button>
-            <Button
-              onClick={() => handleOpportunitySelect('aft')}
-              variant="outline"
-              size="sm"
-              className="bg-orange-50 hover:bg-orange-100 text-black text-xs sm:text-sm"
-              disabled={opportunityWindow.length === 0}
-            >
-              Max Aft CG
-            </Button>
-          </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={() => handleOpportunitySelect('forward')}
+                variant="outline"
+                size="sm"
+                className="bg-purple-50 hover:bg-purple-100 text-black text-xs sm:text-sm"
+                disabled={opportunityWindow.length === 0}
+              >
+                Max Aft CG
+              </Button>
+              <Button
+                onClick={() => handleOpportunitySelect('aft')}
+                variant="outline"
+                size="sm"
+                className="bg-orange-50 hover:bg-orange-100 text-black text-xs sm:text-sm"
+                disabled={opportunityWindow.length === 0}
+              >
+                Max Fwd CG
+              </Button>
+            </div>
           </div>
         )}
 
         {/* Scrollable Loading Grid */}
         {!sidebarCollapsed && (
           <div className="flex-1 overflow-hidden bg-white">
-          <div className="h-full overflow-y-auto p-2 sm:p-4">
-            <LoadingGrid
-              key={selectedPattern}
-              onWeightChange={handleCompute}
-              units={units}
-              onFuelLoad={handleFuelLoad}
-              loadingSequence={[...getAllPatterns()[selectedPattern as keyof ReturnType<typeof getAllPatterns>]]}
-              initialWeights={testWeights}
-            />
-          </div>
+            <div className="h-full overflow-y-auto p-2 sm:p-4">
+              <LoadingGrid
+                key={selectedPattern}
+                onWeightChange={handleCompute}
+                units={units}
+                onFuelLoad={handleFuelLoad}
+                loadingSequence={[...getAllPatterns()[selectedPattern as keyof ReturnType<typeof getAllPatterns>]]}
+                initialWeights={testWeights}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -1123,7 +1127,7 @@ export default function WeightCalculator() {
                                     className="w-2 h-8 rounded border-2 border-dashed border-transparent hover:border-blue-400 transition-colors"
                                     title="Drop here to insert at beginning"
                                   />
-                                  
+
                                   {newPatternOrder.map((position, index) => (
                                     <React.Fragment key={`${position}-${index}`}>
                                       <div
@@ -1147,7 +1151,7 @@ export default function WeightCalculator() {
                                           ×
                                         </button>
                                       </div>
-                                      
+
                                       {/* Drop zone after each position */}
                                       <div
                                         onDragOver={handleDragOver}
@@ -1173,11 +1177,10 @@ export default function WeightCalculator() {
                                   <button
                                     key={position}
                                     onClick={() => handleTogglePosition(position)}
-                                    className={`px-2 py-1 text-xs rounded font-mono border transition-all duration-200 transform hover:scale-105 ${
-                                      newPatternOrder.includes(position)
+                                    className={`px-2 py-1 text-xs rounded font-mono border transition-all duration-200 transform hover:scale-105 ${newPatternOrder.includes(position)
                                         ? 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200 cursor-pointer shadow-md'
                                         : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 cursor-pointer shadow-sm hover:shadow-md'
-                                    }`}
+                                      }`}
                                     title={newPatternOrder.includes(position) ? 'Click to remove from pattern' : 'Click to add to pattern'}
                                   >
                                     {position}
@@ -1190,7 +1193,7 @@ export default function WeightCalculator() {
                                 ))}
                               </div>
                             </div>
-                            
+
                             <div className="mt-3 text-xs text-gray-500">
                               <p>💡 <strong>Tips:</strong></p>
                               <ul className="mt-1 space-y-1 list-disc list-inside">
@@ -1616,7 +1619,7 @@ export default function WeightCalculator() {
               <TabsContent value="analytics" className="h-full mt-0">
                 <Card className="h-full">
                   <CardContent className="h-full p-4 overflow-auto">
-                    <AnalyticsDashboard 
+                    <AnalyticsDashboard
                       onSelectPattern={(patternId) => {
                         // Find pattern by ID and switch to it
                         const pattern = dbPatterns.find(p => p.id === patternId);
@@ -1638,7 +1641,7 @@ export default function WeightCalculator() {
           <div className="p-4 border-b border-gray-200">
             <h2 className="text-lg font-bold text-black">Summary</h2>
           </div>
-          
+
           <div className="flex-1 p-4 overflow-y-auto">
             {tableData.length > 1 ? (
               <div className="space-y-4">
@@ -1660,26 +1663,31 @@ export default function WeightCalculator() {
                     <div className="font-bold text-sm text-black">ZFW</div>
                     <div className="text-xl font-mono text-black">
                       {new Intl.NumberFormat().format(fuelLoaded ?
-                        loadingPoints[loadingPoints.length - 2].weight :
-                        convertWeight(loadingPoints[loadingPoints.length - 1].weight, units))} {getWeightUnit(units)}
+                        convertWeight(tableData[tableData.length - 2].sumWeight, units) :
+                        convertWeight(tableData[tableData.length - 1].sumWeight, units))} {getWeightUnit(units)}
                     </div>
                     <div className="text-xs text-black">
                       {fuelLoaded ?
-                        loadingPoints[loadingPoints.length - 2].cg.toFixed(2) :
-                        loadingPoints[loadingPoints.length - 1].cg.toFixed(2)}% MAC
+                        tableData[tableData.length - 2].mac.toFixed(2) :
+                        tableData[tableData.length - 1].mac.toFixed(2)}% MAC
                     </div>
                   </div>
-                  
+
                   <div className="p-3 border rounded-lg bg-yellow-50">
                     <div className="font-bold text-sm text-black">Fuel</div>
-                    <div className="text-xl font-mono text-black">{new Intl.NumberFormat().format(convertWeight(fuelWeight, units))} {getWeightUnit(units)}</div>
+                    <div className="text-xl font-mono text-black">
+                      {new Intl.NumberFormat().format(fuelGallons)} gal
+                    </div>
+                    <div className="text-xs text-black">
+                      {new Intl.NumberFormat().format(Math.round(fuelGallons * 6.7))} lbs
+                    </div>
                     {fuelLoaded && (
                       <div className="text-xs text-black">
-                        Arm: {getFuelArm(fuelWeight).toFixed(1)}
+                        Arm: {getFuelArm(fuelGallons).toFixed(1)}
                       </div>
                     )}
                   </div>
-                  
+
                   <div className={`p-3 border rounded-lg ${fuelLoaded ? 'bg-green-50' : 'bg-orange-50'}`}>
                     <div className="font-bold text-sm text-black">TOW</div>
                     <div className="text-xl font-mono text-black">
@@ -1745,7 +1753,7 @@ export default function WeightCalculator() {
                   <div className="p-3 border rounded-lg">
                     <h3 className="font-bold text-sm mb-2">Envelope Status</h3>
                     <div className="text-xs text-black">
-                      {loadingPoints.slice(1).every(point => 
+                      {loadingPoints.slice(1).every(point =>
                         isPointInEnvelope(point.cg, point.weight)
                       ) ? (
                         <div className="text-green-600 font-medium">✓ All points within envelope</div>

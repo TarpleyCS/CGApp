@@ -38,27 +38,27 @@ describe('calculations', () => {
       expect(getFuelArm(-100)).toBe(0);
     });
 
-    it('should return exact value for fuel weights in the table', () => {
-      // Test with first entry in FUEL_CG_DATA
-      const [weight, expectedArm] = FUEL_CG_DATA[0];
-      expect(getFuelArm(weight)).toBe(expectedArm);
+    it('should return exact moment arm for gallons in the table', () => {
+      // FUEL_CG_DATA format: [gallons, weight_lbs, moment_arm]
+      const [gallons, , expectedArm] = FUEL_CG_DATA[0];
+      expect(getFuelArm(gallons)).toBe(expectedArm);
     });
 
     it('should interpolate between fuel data points', () => {
-      // Test interpolation between 100 and 200
+      // Test interpolation between 100 and 200 gallons
       const result = getFuelArm(150);
-      const [w1, arm1] = FUEL_CG_DATA[0]; // [100, 1153.4]
-      const [w2, arm2] = FUEL_CG_DATA[1]; // [200, 1153.6]
-      
-      const expectedArm = arm1 + ((150 - w1) / (w2 - w1)) * (arm2 - arm1);
+      const [g1, , arm1] = FUEL_CG_DATA[0];
+      const [g2, , arm2] = FUEL_CG_DATA[1];
+
+      const expectedArm = arm1 + ((150 - g1) / (g2 - g1)) * (arm2 - arm1);
       expect(result).toBeCloseTo(expectedArm, 2);
     });
 
-    it('should handle fuel weight beyond maximum table value', () => {
-      const maxWeight = FUEL_CG_DATA[FUEL_CG_DATA.length - 1][0];
-      const maxArm = FUEL_CG_DATA[FUEL_CG_DATA.length - 1][1];
-      
-      expect(getFuelArm(maxWeight + 1000)).toBe(maxArm);
+    it('should handle gallons beyond maximum table value', () => {
+      const maxGallons = FUEL_CG_DATA[FUEL_CG_DATA.length - 1][0];
+      const maxArm = FUEL_CG_DATA[FUEL_CG_DATA.length - 1][2];
+
+      expect(getFuelArm(maxGallons + 1000)).toBe(maxArm);
     });
   });
 
@@ -158,53 +158,62 @@ describe('calculations', () => {
       mac: 19.4
     };
 
-    it('should add fuel to existing calculation', () => {
-      const fuelWeight = 15000;
-      const result = addFuelToCalculation(mockLastResult, fuelWeight);
-      
+    it('should add fuel to existing calculation (gallons input)', () => {
+      const fuelGallons = 15000;
+      const expectedWeight = fuelGallons * 6.7;
+      const result = addFuelToCalculation(mockLastResult, fuelGallons);
+
       expect(result.result.position).toBe('FUEL');
-      expect(result.result.weight).toBe(fuelWeight);
-      expect(result.result.sumWeight).toBe(mockLastResult.sumWeight + fuelWeight);
+      expect(result.result.weight).toBe(expectedWeight);
+      expect(result.result.sumWeight).toBe(mockLastResult.sumWeight + expectedWeight);
     });
 
-    it('should calculate fuel arm correctly', () => {
-      const fuelWeight = 15000;
-      const result = addFuelToCalculation(mockLastResult, fuelWeight);
-      const expectedFuelArm = getFuelArm(fuelWeight);
-      
+    it('should calculate fuel arm correctly from gallons', () => {
+      const fuelGallons = 15000;
+      const expectedWeight = fuelGallons * 6.7;
+      const result = addFuelToCalculation(mockLastResult, fuelGallons);
+      const expectedFuelArm = getFuelArm(fuelGallons);
+
       expect(result.result.momentArm).toBe(expectedFuelArm);
-      expect(result.result.moment).toBe(fuelWeight * expectedFuelArm);
+      expect(result.result.moment).toBe(expectedWeight * expectedFuelArm);
     });
 
     it('should update CG calculation with fuel', () => {
-      const fuelWeight = 15000;
-      const result = addFuelToCalculation(mockLastResult, fuelWeight);
-      
-      const expectedFuelArm = getFuelArm(fuelWeight);
-      const expectedTotalMoment = mockLastResult.sumMoment + (fuelWeight * expectedFuelArm);
-      const expectedTotalWeight = mockLastResult.sumWeight + fuelWeight;
+      const fuelGallons = 15000;
+      const expectedWeight = fuelGallons * 6.7;
+      const result = addFuelToCalculation(mockLastResult, fuelGallons);
+
+      const expectedFuelArm = getFuelArm(fuelGallons);
+      const expectedTotalMoment = mockLastResult.sumMoment + (expectedWeight * expectedFuelArm);
+      const expectedTotalWeight = mockLastResult.sumWeight + expectedWeight;
       const expectedBA = expectedTotalMoment / expectedTotalWeight;
       const expectedCG = convertMomentArmToCG(expectedBA);
-      
+
       expect(result.result.sumMoment).toBeCloseTo(expectedTotalMoment, 0);
       expect(result.result.sumBA).toBeCloseTo(expectedBA, 2);
       expect(result.result.mac).toBeCloseTo(expectedCG, 2);
     });
 
-    it('should create loading point with correct values', () => {
-      const fuelWeight = 15000;
-      const result = addFuelToCalculation(mockLastResult, fuelWeight);
-      
-      expect(result.loadingPoint.weight).toBe(result.result.sumWeight);
-      expect(result.loadingPoint.cg).toBe(result.result.mac);
+    it('should return intermediate loading points for fuel curve', () => {
+      const fuelGallons = 15000;
+      const result = addFuelToCalculation(mockLastResult, fuelGallons);
+
+      // Should have many intermediate points (one per FUEL_CG_DATA entry up to 15000 gal)
+      expect(result.loadingPoints.length).toBeGreaterThan(1);
+
+      // Last loading point should match the final result
+      const lastPoint = result.loadingPoints[result.loadingPoints.length - 1];
+      expect(lastPoint.weight).toBe(result.result.sumWeight);
+      expect(lastPoint.cg).toBe(result.result.mac);
     });
 
-    it('should handle zero fuel weight', () => {
+    it('should handle zero fuel gallons', () => {
       const result = addFuelToCalculation(mockLastResult, 0);
-      
+
       expect(result.result.weight).toBe(0);
       expect(result.result.moment).toBe(0);
       expect(result.result.sumWeight).toBe(mockLastResult.sumWeight);
+      expect(result.loadingPoints.length).toBe(1);
     });
   });
 });

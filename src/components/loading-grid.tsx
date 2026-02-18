@@ -7,7 +7,7 @@ import { convertWeight, getWeightUnit, type Units } from '@/lib/units';
 
 interface LoadingGridProps {
   onWeightChange: (weights: Array<{ weight: number; position: string }>) => void;
-  onFuelLoad?: (fuelWeight: number) => void;
+  onFuelLoad?: (fuelGallons: number) => void;
   loadingSequence?: string[];
   initialWeights?: Array<{ weight: number; position: string }>;
   units?: Units;
@@ -29,7 +29,7 @@ export function LoadingGrid({
     }
     return [{ weight: DEFAULT_PALLET_WEIGHT, position: loadingSequence[0], id: `${loadingSequence[0]}-0` }];
   });
-  const [fuelWeight, setFuelWeight] = useState<number>(0);
+  const [fuelGallons, setFuelGallons] = useState<number>(0);
 
   useEffect(() => {
     if (initialWeights && initialWeights.length > 0) {
@@ -76,16 +76,13 @@ export function LoadingGrid({
   };
 
   const handleFuelChange = (value: string) => {
-    // Convert input value from display units to pounds (for internal calculations)
-    const inputWeight = Number(value) || 0;
-    // If user is entering KG, convert to LB; otherwise keep as LB
-    const weightInPounds = units === 'KG' ? Math.round(inputWeight / 0.453592) : inputWeight;
-    setFuelWeight(weightInPounds);
+    const gallons = Number(value) || 0;
+    setFuelGallons(gallons);
   };
 
   const handleLoadFuel = () => {
     if (onFuelLoad) {
-      onFuelLoad(fuelWeight); // Already in pounds
+      onFuelLoad(fuelGallons);
     }
   };
 
@@ -165,17 +162,17 @@ export function LoadingGrid({
               <div className="font-bold text-center mb-4 text-black">Fuel Loading</div>
               <div className="flex items-center gap-2">
                 <div className="w-20 text-right text-sm text-black">
-                  Fuel ({getWeightUnit(units)})
+                  Fuel (gal.)
                 </div>
                 <input
                   type="number"
-                  value={fuelWeight ? convertWeight(fuelWeight, units) : ''}
+                  value={fuelGallons || ''}
                   onChange={(e) => handleFuelChange(e.target.value)}
                   className="flex-1 px-3 py-2 border rounded-md text-center text-black"
                   min={0}
-                  max={units === 'KG' ? 150000 : 330000}
-                  step={units === 'KG' ? 100 : 500}
-                  placeholder={`Enter fuel weight (${getWeightUnit(units)})`}
+                  max={47890}
+                  step={100}
+                  placeholder="Enter fuel (gallons)"
                 />
               </div>
               <Button

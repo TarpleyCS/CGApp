@@ -33,39 +33,37 @@ export function convertMomentArmToCG(momentArm: number): number {
 }
 
 /**
- * Get fuel arm based on weight using interpolation
+ * Get fuel moment arm based on gallons using interpolation.
+ * FUEL_CG_DATA format: [gallons, weight_lbs, moment_arm]
  */
-export function getFuelArm(fuelWeight: number): number {
-  if (fuelWeight <= 0) return 0;
-  
-  // Convert to hundreds for table lookup
-  const hundreds = Math.floor(fuelWeight);
-  
-  // Find closest data points
+export function getFuelArm(fuelGallons: number): number {
+  if (fuelGallons <= 0) return 0;
+
+  // Find closest data points by gallons (index 0)
   let lowerIndex = 0;
   for (let i = 0; i < FUEL_CG_DATA.length; i++) {
-    if (FUEL_CG_DATA[i][0] <= hundreds) {
+    if (FUEL_CG_DATA[i][0] <= fuelGallons) {
       lowerIndex = i;
     } else {
       break;
     }
   }
-  
+
   // Get upper index (bounded to prevent out of range)
   const upperIndex = Math.min(lowerIndex + 1, FUEL_CG_DATA.length - 1);
-  
+
   // If we're at exact data point or beyond max, return direct value
-  if (lowerIndex === upperIndex || hundreds >= FUEL_CG_DATA[FUEL_CG_DATA.length - 1][0]) {
-    return FUEL_CG_DATA[lowerIndex][1];
+  if (lowerIndex === upperIndex || fuelGallons >= FUEL_CG_DATA[FUEL_CG_DATA.length - 1][0]) {
+    return FUEL_CG_DATA[lowerIndex][2];
   }
-  
-  // Interpolate between data points
-  const lowerWeight = FUEL_CG_DATA[lowerIndex][0];
-  const upperWeight = FUEL_CG_DATA[upperIndex][0];
-  const lowerArm = FUEL_CG_DATA[lowerIndex][1];
-  const upperArm = FUEL_CG_DATA[upperIndex][1];
-  
-  return lowerArm + ((hundreds - lowerWeight) / (upperWeight - lowerWeight)) * (upperArm - lowerArm);
+
+  // Interpolate between data points using gallons (index 0) and moment arm (index 2)
+  const lowerGallons = FUEL_CG_DATA[lowerIndex][0];
+  const upperGallons = FUEL_CG_DATA[upperIndex][0];
+  const lowerArm = FUEL_CG_DATA[lowerIndex][2];
+  const upperArm = FUEL_CG_DATA[upperIndex][2];
+
+  return lowerArm + ((fuelGallons - lowerGallons) / (upperGallons - lowerGallons)) * (upperArm - lowerArm);
 }
 
 /**
@@ -128,23 +126,50 @@ export function calculateCumulativeWeights(
 }
 
 /**
- * Add fuel to existing calculation results
+ * Add fuel to existing calculation results.
+ * Accepts fuel in gallons, computes weight as gallons × 6.7 lbs/gal.
+ * Returns intermediate loading points for each FUEL_CG_DATA entry to
+ * produce a curved fuel line on the CG chart.
  */
 export function addFuelToCalculation(
   lastResult: CalculationResult,
-  fuelWeight: number
+  fuelGallons: number
 ): {
   result: CalculationResult;
-  loadingPoint: LoadingPoint;
+  loadingPoints: LoadingPoint[];
 } {
-  const fuelArm = getFuelArm(fuelWeight);
+  const loadingPoints: LoadingPoint[] = [];
+
+  // Generate intermediate loading points through FUEL_CG_DATA
+  // Each entry is [gallons, weight_lbs, moment_arm] for cumulative fuel state
+  for (let i = 0; i < FUEL_CG_DATA.length; i++) {
+    const [gal, wt, arm] = FUEL_CG_DATA[i];
+    if (gal > fuelGallons) break;
+
+    const totalWeight = lastResult.sumWeight + wt;
+    const totalMoment = lastResult.sumMoment + (wt * arm);
+    const ba = totalMoment / totalWeight;
+    const cg = convertMomentArmToCG(ba);
+
+    loadingPoints.push({ cg, weight: totalWeight });
+  }
+
+  // Compute the final point (with interpolation if fuelGallons isn't an exact table entry)
+  const fuelWeight = fuelGallons * 6.7;
+  const fuelArm = getFuelArm(fuelGallons);
   const fuelMoment = fuelWeight * fuelArm;
-  
+
   const newTotalWeight = lastResult.sumWeight + fuelWeight;
   const newTotalMoment = lastResult.sumMoment + fuelMoment;
   const newBA = newTotalMoment / newTotalWeight;
   const newCG = convertMomentArmToCG(newBA);
-  
+
+  // Add final interpolated point if it differs from the last table entry
+  const lastPoint = loadingPoints[loadingPoints.length - 1];
+  if (!lastPoint || Math.abs(lastPoint.weight - newTotalWeight) > 0.1) {
+    loadingPoints.push({ cg: newCG, weight: newTotalWeight });
+  }
+
   const result: CalculationResult = {
     position: 'FUEL',
     momentArm: fuelArm,
@@ -156,7 +181,5 @@ export function addFuelToCalculation(
     mac: newCG
   };
 
-  const loadingPoint: LoadingPoint = { cg: newCG, weight: newTotalWeight };
-
-  return { result, loadingPoint };
+  return { result, loadingPoints };
 }
