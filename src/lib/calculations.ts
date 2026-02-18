@@ -190,3 +190,78 @@ export function addFuelToCalculation(
 
   return { result, loadingPoints };
 }
+
+/**
+ * Ray-casting point-in-polygon test.
+ * Works for any closed polygon (convex or concave).
+ * Polygon should be an array of {cg, weight} vertices forming a closed boundary.
+ */
+export function isPointInPolygon(
+  point: { cg: number; weight: number },
+  polygon: Array<{ cg: number; weight: number }>
+): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].cg, yi = polygon[i].weight;
+    const xj = polygon[j].cg, yj = polygon[j].weight;
+
+    if (((yi > point.weight) !== (yj > point.weight)) &&
+      (point.cg < (xj - xi) * (point.weight - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * CG envelope polygons per variant (closed — last point equals first).
+ */
+export const CG_ENVELOPES: Record<AircraftVariant, Array<{ cg: number; weight: number }>> = {
+  '300ER': [
+    { cg: 14.0, weight: 300000 },
+    { cg: 14.0, weight: 460000 },
+    { cg: 14.7, weight: 492000 },
+    { cg: 18.0, weight: 722300 },
+    { cg: 19.7, weight: 752000 },
+    { cg: 23.0, weight: 758143 },
+    { cg: 26.0, weight: 763815 },
+    { cg: 28.2, weight: 768000 },
+    { cg: 30.6, weight: 768000 },
+    { cg: 37.8, weight: 752000 },
+    { cg: 41.2, weight: 705300 },
+    { cg: 44.0, weight: 609000 },
+    { cg: 34.9, weight: 347000 },
+    { cg: 23.2, weight: 300000 },
+    { cg: 14.0, weight: 300000 }
+  ],
+  '200LR': [
+    { cg: 14.0, weight: 300000 },
+    { cg: 14.0, weight: 460000 },
+    { cg: 14.7, weight: 492000 },
+    { cg: 15.7, weight: 543000 },
+    { cg: 16.1, weight: 570000 },
+    { cg: 18.0, weight: 722300 },
+    { cg: 18.5, weight: 730608 },
+    { cg: 26.0, weight: 763815 },
+    { cg: 28.2, weight: 768000 },
+    { cg: 30.6, weight: 768000 },
+    { cg: 37.8, weight: 752000 },
+    { cg: 41.2, weight: 705300 },
+    { cg: 44.0, weight: 609000 },
+    { cg: 34.9, weight: 347000 },
+    { cg: 26.0, weight: 310050 },
+    { cg: 23.2, weight: 300000 },
+    { cg: 14.0, weight: 300000 }
+  ]
+};
+
+/**
+ * Check whether a CG/weight point is inside the operating envelope for a variant.
+ */
+export function isPointInEnvelope(
+  cg: number,
+  weight: number,
+  variant: AircraftVariant
+): boolean {
+  return isPointInPolygon({ cg, weight }, CG_ENVELOPES[variant]);
+}

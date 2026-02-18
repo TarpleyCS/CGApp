@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart } from 'recharts';
 import { formatWeight } from '@/lib/units';
+import { isPointInPolygon } from '@/lib/calculations';
 
 interface EnvelopePoint {
   cg: number;
@@ -286,18 +287,6 @@ export function WeightChart({ variant = '300ER', loadingPoints, fuelLoadingPoint
   };
 
   const loadCheckPolygons = createCumulativeLoadPolygons();
-
-  // Point-in-polygon test function
-  const isPointInPolygon = (point: { cg: number; weight: number }, polygon: EnvelopePoint[]) => {
-    let inside = false;
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-      if (((polygon[i].weight > point.weight) !== (polygon[j].weight > point.weight)) &&
-        (point.cg < (polygon[j].cg - polygon[i].cg) * (point.weight - polygon[i].weight) / (polygon[j].weight - polygon[i].weight) + polygon[i].cg)) {
-        inside = !inside;
-      }
-    }
-    return inside;
-  };
 
   // Check cumulative load requirements for the final loading point
   const checkCumulativeLoadRequirements = () => {

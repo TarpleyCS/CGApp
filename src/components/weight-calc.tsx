@@ -17,6 +17,7 @@ import {
   calculateCumulativeWeights,
   addFuelToCalculation,
   getFuelArm,
+  isPointInEnvelope,
   type WeightData,
   type LoadingPoint,
   type CalculationResult
@@ -158,82 +159,6 @@ export default function WeightCalculator() {
     handleCompute(generatedWeights);
   };
 
-  // Simple point-in-polygon check for CG envelope
-  const isPointInEnvelope = (cg: number, weight: number): boolean => {
-    const envelope = variant === '300ER' ?
-      [
-        { cg: 14.0, weight: 300000 },
-        { cg: 14.0, weight: 460000 },
-        { cg: 14.7, weight: 492000 },
-        { cg: 18.0, weight: 722300 },
-        { cg: 19.7, weight: 752000 },
-        { cg: 23.0, weight: 758143 },
-        { cg: 26.0, weight: 763815 },
-        { cg: 28.2, weight: 768000 },
-        { cg: 30.6, weight: 768000 },
-        { cg: 37.8, weight: 752000 },
-        { cg: 41.2, weight: 705300 },
-        { cg: 44.0, weight: 609000 },
-        { cg: 34.9, weight: 347000 },
-        { cg: 23.2, weight: 300000 }
-      ] : [
-        { cg: 14.0, weight: 250000 },
-        { cg: 14.0, weight: 460000 },
-        { cg: 16.3, weight: 582000 },
-        { cg: 20.9, weight: 646300 },
-        { cg: 23.0, weight: 650000 },
-        { cg: 27.4, weight: 657000 },
-        { cg: 31.1, weight: 657000 },
-        { cg: 37.4, weight: 642000 },
-        { cg: 44.0, weight: 565000 },
-        { cg: 44.0, weight: 250000 }
-      ];
-
-    // Simple bounds check - if outside basic bounds, definitely not in envelope
-    if (cg < 14.0 || cg > 44.0) return false;
-    if (weight < 250000 || weight > 768000) return false;
-
-    // For more precise check, we'd need full point-in-polygon algorithm
-    // For now, do a simplified envelope check
-    const maxWeightForCG = getMaxWeightForCG(cg, envelope);
-    const minWeightForCG = getMinWeightForCG(cg, envelope);
-
-    return weight >= minWeightForCG && weight <= maxWeightForCG;
-  };
-
-  const getMaxWeightForCG = (targetCG: number, envelope: Array<{ cg: number, weight: number }>): number => {
-    // Find the maximum weight allowed for a given CG
-    let maxWeight = 0;
-    for (let i = 0; i < envelope.length - 1; i++) {
-      const p1 = envelope[i];
-      const p2 = envelope[i + 1];
-
-      if ((p1.cg <= targetCG && targetCG <= p2.cg) || (p2.cg <= targetCG && targetCG <= p1.cg)) {
-        // Interpolate weight for this CG
-        const ratio = (targetCG - p1.cg) / (p2.cg - p1.cg);
-        const interpolatedWeight = p1.weight + ratio * (p2.weight - p1.weight);
-        maxWeight = Math.max(maxWeight, interpolatedWeight);
-      }
-    }
-    return maxWeight || 768000; // Default max if not found
-  };
-
-  const getMinWeightForCG = (targetCG: number, envelope: Array<{ cg: number, weight: number }>): number => {
-    // Find the minimum weight allowed for a given CG
-    let minWeight = Infinity;
-    for (let i = 0; i < envelope.length - 1; i++) {
-      const p1 = envelope[i];
-      const p2 = envelope[i + 1];
-
-      if ((p1.cg <= targetCG && targetCG <= p2.cg) || (p2.cg <= targetCG && targetCG <= p1.cg)) {
-        // Interpolate weight for this CG
-        const ratio = (targetCG - p1.cg) / (p2.cg - p1.cg);
-        const interpolatedWeight = p1.weight + ratio * (p2.weight - p1.weight);
-        minWeight = Math.min(minWeight, interpolatedWeight);
-      }
-    }
-    return minWeight === Infinity ? 250000 : minWeight; // Default min if not found
-  };
 
   const handleOptimize = async () => {
     if (tableData.length === 0) return;
@@ -268,12 +193,8 @@ export default function WeightCalculator() {
       let finalViolation = 0;
 
       // Heavy penalty if final CG is out of envelope
-      if (!isPointInEnvelope(finalPoint.cg, finalPoint.weight)) {
-        const envelope = variant === '300ER' ?
-          [{ cg: 14.0, weight: 300000 }, { cg: 44.0, weight: 609000 }] :
-          [{ cg: 14.0, weight: 250000 }, { cg: 44.0, weight: 565000 }];
-        const maxAllowed = getMaxWeightForCG(finalPoint.cg, envelope);
-        finalViolation = Math.abs(finalPoint.weight - maxAllowed);
+      if (!isPointInEnvelope(finalPoint.cg, finalPoint.weight, variant)) {
+        finalViolation = 1;
         score += 1000000; // Heavy penalty for final CG violation
       }
 
@@ -282,7 +203,7 @@ export default function WeightCalculator() {
       points.forEach((point, index) => {
         if (index === 0 || index === points.length - 1) return; // Skip OEW and final point
 
-        if (!isPointInEnvelope(point.cg, point.weight)) {
+        if (!isPointInEnvelope(point.cg, point.weight, variant)) {
           intermediateViolations += 1;
         }
       });
@@ -664,7 +585,7 @@ export default function WeightCalculator() {
 
     // Count envelope violations
     const envelopeViolations = finalResults.loadingPoints.filter(
-      point => !isPointInEnvelope(point.cg, point.weight)
+      point => !isPointInEnvelope(point.cg, point.weight, variant)
     ).length;
 
     // Save optimization history
@@ -1773,20 +1694,42 @@ export default function WeightCalculator() {
                 </div>
 
                 {/* Envelope Status */}
-                {loadingPoints.length > 1 && (
-                  <div className="p-3 border rounded-lg">
-                    <h3 className="font-bold text-sm mb-2">Envelope Status</h3>
-                    <div className="text-xs text-black">
-                      {loadingPoints.slice(1).every(point =>
-                        isPointInEnvelope(point.cg, point.weight)
-                      ) ? (
-                        <div className="text-green-600 font-medium">✓ All points within envelope</div>
-                      ) : (
-                        <div className="text-red-600 font-medium">⚠ Some points outside envelope</div>
-                      )}
+                {loadingPoints.length > 1 && (() => {
+                  const outsidePoints = tableData
+                    .filter(r => r.position !== 'OEW' && r.position !== 'FUEL')
+                    .map((r, i) => ({
+                      position: r.position,
+                      cg: r.mac,
+                      weight: r.sumWeight,
+                      index: i
+                    }))
+                    .filter(p => !isPointInEnvelope(p.cg, p.weight, variant));
+
+                  return (
+                    <div className="p-3 border rounded-lg">
+                      <h3 className="font-bold text-sm mb-2">Envelope Status</h3>
+                      <div className="text-xs text-black">
+                        {outsidePoints.length === 0 ? (
+                          <div className="text-green-600 font-medium">All points within envelope</div>
+                        ) : (
+                          <>
+                            <div className="text-red-600 font-medium mb-2">
+                              {outsidePoints.length} point{outsidePoints.length !== 1 ? 's' : ''} outside envelope
+                            </div>
+                            <div className="space-y-1">
+                              {outsidePoints.map(p => (
+                                <div key={p.position} className="flex justify-between text-red-700">
+                                  <span className="font-mono">{p.position}</span>
+                                  <span>{p.cg.toFixed(1)}% MAC @ {new Intl.NumberFormat().format(Math.round(convertWeight(p.weight, units)))} {getWeightUnit(units)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             ) : (
               <div className="flex items-center justify-center h-full text-gray-700">
