@@ -10,6 +10,7 @@ interface EnvelopePoint {
 interface WeightChartProps {
   variant?: '200LR' | '300ER';
   loadingPoints?: EnvelopePoint[];
+  fuelLoadingPoints?: EnvelopePoint[];
   opportunityWindow?: EnvelopePoint[];
   units?: 'LB' | 'KG';
   palletLabels?: string[];
@@ -135,7 +136,7 @@ const ENVELOPES = {
   }
 };
 
-export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindow, units = 'LB', palletLabels = [] }: WeightChartProps) {
+export function WeightChart({ variant = '300ER', loadingPoints, fuelLoadingPoints, opportunityWindow, units = 'LB', palletLabels = [] }: WeightChartProps) {
   // State for draggable labels
   const [labelPositions, setLabelPositions] = useState<{ [key: string]: { x: number, y: number } }>({});
   const [isDragging, setIsDragging] = useState(false);
@@ -219,6 +220,18 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
   const loadingLine = convertedLoadingPoints.length > 0 ?
     convertedLoadingPoints :
     [envelopeData.OEW];
+
+  // Fuel loading points rendered as a separate line (no dots, thinner)
+  const fuelLine = Array.isArray(fuelLoadingPoints) && fuelLoadingPoints.length > 0
+    ? [
+        // Start from the last cargo point so lines connect
+        convertedLoadingPoints[convertedLoadingPoints.length - 1],
+        ...fuelLoadingPoints.map(point => ({
+          ...point,
+          weight: convertWeight(point.weight)
+        }))
+      ]
+    : [];
 
   // Process opportunity window for final weight CG range visualization
   const processOpportunityWindow = () => {
@@ -752,7 +765,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
               stroke="#ff0000ff"
               strokeWidth={2}
               strokeDasharray="6 4"
-              dot={{ r: 3, fill: "#ff0000ff" }}
+              dot={{ r: 2, fill: "#ff0000ff" }}
               name="Cumulative Load Check 1"
               connectNulls
             />
@@ -764,7 +777,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
               stroke="#ff0000ff"
               strokeWidth={2}
               strokeDasharray="6 4"
-              dot={{ r: 3, fill: "#ff0000ff" }}
+              dot={{ r: 2, fill: "#ff0000ff" }}
               name="Cumulative Load Check 2"
               connectNulls
             />
@@ -825,6 +838,19 @@ export function WeightChart({ variant = '300ER', loadingPoints, opportunityWindo
                 strokeWidth={3}
                 dot={{ r: 4 }}
                 name="Loading Progression Path"
+                connectNulls
+              />
+            )}
+            {fuelLine.length > 1 && (
+              <Line
+                data={fuelLine}
+                type="linear"
+                dataKey="weight"
+                stroke="#f59e0b"
+                strokeWidth={2.5}
+                dot={false}
+                activeDot={false}
+                name="Fuel Loading Path"
                 connectNulls
               />
             )}

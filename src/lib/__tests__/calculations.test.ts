@@ -215,5 +215,27 @@ describe('calculations', () => {
       expect(result.result.sumWeight).toBe(mockLastResult.sumWeight);
       expect(result.loadingPoints.length).toBe(1);
     });
+
+    it('should skip already-loaded fuel when startGallons is provided', () => {
+      const firstLoad = addFuelToCalculation(mockLastResult, 10000, 0);
+      const secondLoad = addFuelToCalculation(mockLastResult, 20000, 10000);
+
+      // Second load should only have points between 10000 and 20000 gallons
+      expect(secondLoad.loadingPoints.length).toBeGreaterThan(0);
+
+      // No overlap: first load's last point is at 10000 gal, second starts above 10000
+      const firstLastWeight = firstLoad.loadingPoints[firstLoad.loadingPoints.length - 1].weight;
+      const secondFirstWeight = secondLoad.loadingPoints[0].weight;
+      expect(secondFirstWeight).toBeGreaterThan(firstLastWeight);
+
+      // Combined points should equal a single load from 0 to 20000
+      const fullLoad = addFuelToCalculation(mockLastResult, 20000, 0);
+      const combinedCount = firstLoad.loadingPoints.length + secondLoad.loadingPoints.length;
+      expect(combinedCount).toBe(fullLoad.loadingPoints.length);
+
+      // Final result should be identical regardless of how we got there
+      expect(secondLoad.result.sumWeight).toBeCloseTo(fullLoad.result.sumWeight, 2);
+      expect(secondLoad.result.mac).toBeCloseTo(fullLoad.result.mac, 2);
+    });
   });
 });

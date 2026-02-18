@@ -35,7 +35,7 @@ import {
 
 
 export default function WeightCalculator() {
-  const [variant, setVariant] = useState<'300ER' | '200LR'>('200LR');
+  const [variant, setVariant] = useState<'200LR' | '300ER'>('200LR');
   const [units, setUnits] = useState<'LB' | 'KG'>('LB');
   const [selectedPattern, setSelectedPattern] = useState('default');
   const [loadingPoints, setLoadingPoints] = useState<LoadingPoint[]>([
@@ -43,6 +43,7 @@ export default function WeightCalculator() {
   ]);
   const [fuelLoaded, setFuelLoaded] = useState(false);
   const [fuelGallons, setFuelGallons] = useState(0);
+  const [fuelLoadingPoints, setFuelLoadingPoints] = useState<LoadingPoint[]>([]);
   const [tableData, setTableData] = useState<CalculationResult[]>([]);
   const [testWeights, setTestWeights] = useState<WeightData[]>([]);
   const [opportunityWindow, setOpportunityWindow] = useState<LoadingPoint[]>([]);
@@ -100,6 +101,7 @@ export default function WeightCalculator() {
     // Reset fuel state when weights change
     setFuelLoaded(false);
     setFuelGallons(0);
+    setFuelLoadingPoints([]);
 
     const { results, loadingPoints: points } = calculateCumulativeWeights(weights, variant);
 
@@ -117,13 +119,30 @@ export default function WeightCalculator() {
 
   const handleFuelLoad = (gallons: number) => {
     if (gallons <= 0) return;
-    setFuelGallons(gallons);
 
-    const lastResult = tableData[tableData.length - 1];
-    const { result, loadingPoints: fuelPoints } = addFuelToCalculation(lastResult, gallons);
+    const previousGallons = fuelGallons;
+    const newTotalGallons = fuelGallons + gallons;
 
-    setLoadingPoints([...loadingPoints, ...fuelPoints]);
-    setTableData([...tableData, result]);
+    // Always use the cargo-only baseline (last non-FUEL entry)
+    const cargoBaseline = fuelLoaded
+      ? tableData[tableData.length - 2]
+      : tableData[tableData.length - 1];
+
+    const { result, loadingPoints: fuelPoints } = addFuelToCalculation(
+      cargoBaseline, newTotalGallons, previousGallons
+    );
+
+    // Append new intermediate fuel points to the separate fuel line
+    setFuelLoadingPoints([...fuelLoadingPoints, ...fuelPoints]);
+
+    // Replace existing FUEL row or add new one
+    if (fuelLoaded) {
+      setTableData([...tableData.slice(0, -1), result]);
+    } else {
+      setTableData([...tableData, result]);
+    }
+
+    setFuelGallons(newTotalGallons);
     setFuelLoaded(true);
   };
 
@@ -846,6 +865,7 @@ export default function WeightCalculator() {
                     setTableData([]);
                     setFuelLoaded(false);
                     setFuelGallons(0);
+                    setFuelLoadingPoints([]);
                     setTestWeights([]);
                     setOpportunityWindow([]);
                   }}
@@ -862,6 +882,7 @@ export default function WeightCalculator() {
                     setTableData([]);
                     setFuelLoaded(false);
                     setFuelGallons(0);
+                    setFuelLoadingPoints([]);
                     setTestWeights([]);
                     setOpportunityWindow([]);
                   }}
@@ -869,7 +890,7 @@ export default function WeightCalculator() {
                   size="sm"
                   className="text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2 flex-1"
                 >
-                  <span className="hidden sm:inline">777-</span>200LR
+                  <span className="hidden sm:inline">777-</span>300ER
                 </Button>
               </div>
             </div>
@@ -903,6 +924,7 @@ export default function WeightCalculator() {
                   }]);
                   setFuelLoaded(false);
                   setFuelGallons(0);
+                  setFuelLoadingPoints([]);
                   setTestWeights([]);
                   setOpportunityWindow([]);
                 }}
@@ -1042,6 +1064,7 @@ export default function WeightCalculator() {
                         <WeightChart
                           variant="300ER"
                           loadingPoints={loadingPoints}
+                          fuelLoadingPoints={fuelLoadingPoints}
                           opportunityWindow={opportunityWindow}
                           units={units}
                           palletLabels={tableData.map(r => r.position)}
@@ -1050,6 +1073,7 @@ export default function WeightCalculator() {
                         <WeightChart
                           variant="200LR"
                           loadingPoints={loadingPoints}
+                          fuelLoadingPoints={fuelLoadingPoints}
                           opportunityWindow={opportunityWindow}
                           units={units}
                           palletLabels={tableData.map(r => r.position)}
@@ -1651,11 +1675,11 @@ export default function WeightCalculator() {
                     <div className="font-bold text-sm text-black">Payload</div>
                     <div className="text-xl font-mono text-black">
                       {new Intl.NumberFormat().format(convertWeight(
-                        testWeights.reduce((sum, w) => sum + w.weight, 0), units
+                        tableData.filter(r => r.position !== 'OEW' && r.position !== 'FUEL').reduce((sum, r) => sum + r.weight, 0), units
                       ))} {getWeightUnit(units)}
                     </div>
                     <div className="text-xs text-black">
-                      {testWeights.filter(w => w.weight > 0).length} pallet{testWeights.filter(w => w.weight > 0).length !== 1 ? 's' : ''} loaded
+                      {tableData.filter(r => r.position !== 'OEW' && r.position !== 'FUEL' && r.weight > 0).length} pallet{tableData.filter(r => r.position !== 'OEW' && r.position !== 'FUEL' && r.weight > 0).length !== 1 ? 's' : ''} loaded
                     </div>
                   </div>
 

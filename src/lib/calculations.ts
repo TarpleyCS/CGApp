@@ -130,37 +130,44 @@ export function calculateCumulativeWeights(
  * Accepts fuel in gallons, computes weight as gallons × 6.7 lbs/gal.
  * Returns intermediate loading points for each FUEL_CG_DATA entry to
  * produce a curved fuel line on the CG chart.
+ *
+ * @param cargoResult  The pre-fuel (cargo-only) baseline result
+ * @param endGallons   Total fuel gallons to reach
+ * @param startGallons Fuel gallons already loaded (skip these in the curve)
  */
 export function addFuelToCalculation(
-  lastResult: CalculationResult,
-  fuelGallons: number
+  cargoResult: CalculationResult,
+  endGallons: number,
+  startGallons: number = 0
 ): {
   result: CalculationResult;
   loadingPoints: LoadingPoint[];
 } {
   const loadingPoints: LoadingPoint[] = [];
 
-  // Generate intermediate loading points through FUEL_CG_DATA
-  // Each entry is [gallons, weight_lbs, moment_arm] for cumulative fuel state
+  // Generate intermediate loading points through FUEL_CG_DATA.
+  // Each entry is [gallons, weight_lbs, moment_arm] for cumulative fuel state.
+  // Skip entries at or below startGallons (already plotted).
   for (let i = 0; i < FUEL_CG_DATA.length; i++) {
     const [gal, wt, arm] = FUEL_CG_DATA[i];
-    if (gal > fuelGallons) break;
+    if (gal <= startGallons) continue;
+    if (gal > endGallons) break;
 
-    const totalWeight = lastResult.sumWeight + wt;
-    const totalMoment = lastResult.sumMoment + (wt * arm);
+    const totalWeight = cargoResult.sumWeight + wt;
+    const totalMoment = cargoResult.sumMoment + (wt * arm);
     const ba = totalMoment / totalWeight;
     const cg = convertMomentArmToCG(ba);
 
     loadingPoints.push({ cg, weight: totalWeight });
   }
 
-  // Compute the final point (with interpolation if fuelGallons isn't an exact table entry)
-  const fuelWeight = fuelGallons * 6.7;
-  const fuelArm = getFuelArm(fuelGallons);
+  // Compute the final point (with interpolation if endGallons isn't an exact table entry)
+  const fuelWeight = endGallons * 6.7;
+  const fuelArm = getFuelArm(endGallons);
   const fuelMoment = fuelWeight * fuelArm;
 
-  const newTotalWeight = lastResult.sumWeight + fuelWeight;
-  const newTotalMoment = lastResult.sumMoment + fuelMoment;
+  const newTotalWeight = cargoResult.sumWeight + fuelWeight;
+  const newTotalMoment = cargoResult.sumMoment + fuelMoment;
   const newBA = newTotalMoment / newTotalWeight;
   const newCG = convertMomentArmToCG(newBA);
 
