@@ -80,22 +80,22 @@ export const LOADING_PATTERNS = {
     'AL', 'AR', 'BL', 'BR', 'CL', 'CR', 'DL', 'DR', 'EL', 'ER', 'FL', 'FR',
     'PL', 'PR', 'R',
     // Forward compartment positions
-    '11P', '12P', '13P', '21P', '22P', '23P', '24P', '25P',
+    '11P', '12P', '13P', '21P', '22P', '23P',
     // Then aft positions if needed
     'GL', 'GR', 'HL', 'HR', 'JL', 'JR', 'KL', 'KR', 'LL', 'LR', 'ML', 'MR',
     // Aft compartment positions last
-    '31P', '32P', '33P', '34P', '41P', '42P'
+    '31P', '32P', '41P', '42P'
   ],
   aft: [
     // Aft loading - prioritize aft positions
     'ML', 'MR', 'LL', 'LR', 'KL', 'KR', 'JL', 'JR', 'HL', 'HR', 'GL', 'GR',
     'R',
     // Aft compartment positions
-    '31P', '32P', '33P', '34P', '41P', '42P',
+    '31P', '32P', '41P', '42P',
     // Then forward positions if needed
     'PL', 'PR', 'FL', 'FR', 'EL', 'ER', 'DL', 'DR', 'CL', 'CR', 'BL', 'BR', 'AL', 'AR',
     // Forward compartment positions last
-    '11P', '12P', '13P', '21P', '22P', '23P', '24P', '25P'
+    '11P', '12P', '13P', '21P', '22P', '23P',
   ],
   balanced: [
     // Balanced loading - center positions first
@@ -104,9 +104,9 @@ export const LOADING_PATTERNS = {
     'AL', 'AR', 'BL', 'BR', 'CL', 'CR', 'HL', 'HR', 'KL', 'KR', 'LL', 'LR',
     'PL', 'PR', 'R',
     // Forward compartment positions
-    '11P', '12P', '13P', '21P', '22P', '23P', '24P', '25P',
+    '11P', '12P', '13P', '21P', '22P', '23P',
     // Aft compartment positions
-    '31P', '32P', '33P', '34P', '41P', '42P'
+    '31P', '32P', '41P', '42P'
   ],
 } as const;
 
@@ -116,6 +116,22 @@ export const CG_CONSTANTS = {
   MAC_REFERENCE: 278.5,
 } as const;
 
+// Structural weight limits per variant (lbs)
+export const WEIGHT_LIMITS = {
+  '300ER': {
+    maxZeroFuelWeight: 529000,
+    maxLandingWeight: 545000,
+    maxTakeoffWeight: 766000,
+    maxTaxiWeight: 768000,
+  },
+  '200LR': {
+    maxZeroFuelWeight: 543000,
+    maxLandingWeight: 570000,
+    maxTakeoffWeight: 766000,
+    maxTaxiWeight: 768000,
+  },
+} as const;
+
 // Default loading sequence
 export const DEFAULT_LOADING_SEQUENCE = [
   // Main deck positions first
@@ -123,9 +139,9 @@ export const DEFAULT_LOADING_SEQUENCE = [
   'EL', 'ER', 'FL', 'FR', 'GL', 'GR', 'HL', 'HR', 'JL', 'JR',
   'KL', 'KR', 'LR', 'LL', 'ML', 'MR',
   // Forward compartment positions (after main deck)
-  '11P', '12P', '13P', '21P', '22P', '23P', '24P', '25P',
+  '11P', '12P', '13P', '21P', '22P', '23P',
   // Aft compartment positions (after main deck)
-  '31P', '32P', '33P', '34P', '41P', '42P'
+  '31P', '32P', '41P', '42P'
 ] as const;
 
 // Fuel CG data for interpolation
@@ -332,6 +348,46 @@ export const CUSTOM_PALLET_POSITIONS = {
     palletType: 'LD9'
   }
 } as const;
+
+// Pallet weight limits (lbs)
+export const PALLET_WEIGHT_LIMITS = {
+  MAIN_DECK: 9000,
+  LOWER_DECK: 5000,
+} as const;
+
+// Lower deck position codes (forward and aft compartments)
+export const LOWER_DECK_POSITIONS = new Set([
+  '11P', '12P', '13P', '21P', '22P', '23P',
+  '31P', '32P', '41P', '42P',
+]);
+
+/**
+ * Reference test fill weights per position (lbs).
+ * Based on Boeing 777 standard loading reference.
+ */
+export const REFERENCE_TEST_FILL: Record<string, number> = {
+  // Main deck — A row 9000/pallet, B–P rows 7000/pallet, R single 7000
+  AL: 9000, AR: 9000,
+  BL: 7000, BR: 7000,
+  CL: 7000, CR: 7000,
+  DL: 7000, DR: 7000,
+  EL: 7000, ER: 7000,
+  FL: 7000, FR: 7000,
+  GL: 7000, GR: 7000,
+  HL: 7000, HR: 7000,
+  JL: 7000, JR: 7000,
+  KL: 7000, KR: 7000,
+  LL: 7000, LR: 7000,
+  ML: 7000, MR: 7000,
+  PL: 7000, PR: 7000,
+  R: 7000,
+  // FWD lower deck
+  '11P': 3000, '12P': 2000, '13P': 2000,
+  '21P': 2000, '22P': 2000, '23P': 2000,
+  // AFT lower deck
+  '31P': 3000, '32P': 3000,
+  '41P': 5000, '42P': 5000,
+};
 
 // Type definitions for commonly used interfaces
 export type PositionCode = keyof typeof POSITION_MAP;

@@ -2,8 +2,15 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { DEFAULT_LOADING_SEQUENCE } from '@/lib/constants';
+import { DEFAULT_LOADING_SEQUENCE, LOWER_DECK_POSITIONS, PALLET_WEIGHT_LIMITS } from '@/lib/constants';
 import { convertWeight, getWeightUnit, type Units } from '@/lib/units';
+
+/** Return the max weight (lbs) for a given position code. */
+function getMaxWeight(position: string): number {
+  return LOWER_DECK_POSITIONS.has(position)
+    ? PALLET_WEIGHT_LIMITS.LOWER_DECK
+    : PALLET_WEIGHT_LIMITS.MAIN_DECK;
+}
 
 interface LoadingGridProps {
   onWeightChange: (weights: Array<{ weight: number; position: string }>) => void;
@@ -43,11 +50,16 @@ export function LoadingGrid({
     // If user is entering KG, convert to LB; otherwise keep as LB
     const weightInPounds = units === 'KG' ? Math.round(inputWeight / 0.453592) : inputWeight;
 
+    // Clamp to per-position limit
+    const position = weights[index].position;
+    const maxLbs = getMaxWeight(position);
+    const clampedWeight = Math.min(weightInPounds, maxLbs);
+
     const newWeights = weights.map((w, i) =>
-      i === index ? { ...w, weight: weightInPounds } : w
+      i === index ? { ...w, weight: clampedWeight } : w
     );
     setWeights(newWeights);
-    onWeightChange(newWeights.map(({ weight, position }) => ({ weight, position })));
+    onWeightChange(newWeights.map(({ weight, position: pos }) => ({ weight, position: pos })));
   };
 
   const addWeight = () => {
@@ -112,11 +124,13 @@ export function LoadingGrid({
                     e.preventDefault();
                   }
                 }}
-                className="flex-1 px-3 py-2 border rounded-md text-center text-black"
+                className={`flex-1 px-3 py-2 border rounded-md text-center text-black ${
+                  weight.weight > getMaxWeight(weight.position) ? 'border-red-500 bg-red-50' : ''
+                }`}
                 min={0}
-                max={units === 'KG' ? 9000 : 20000}
+                max={Math.round(convertWeight(getMaxWeight(weight.position), units))}
                 step={units === 'KG' ? 10 : 100}
-                placeholder={`Enter weight (${getWeightUnit(units)})`}
+                placeholder={`Max ${Math.round(convertWeight(getMaxWeight(weight.position), units)).toLocaleString()} ${getWeightUnit(units)}`}
               />
               <button
                 onClick={() => removeWeight(index)}

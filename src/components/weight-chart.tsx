@@ -1168,7 +1168,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, fuelLoadingPoint
                     onMouseDown={(e) => handleLabelMouseDown(labelId, e)}
                   >
                     <div className="font-normal text-black" style={{ fontSize: '8px' }}>
-                      Alternate CG Limit<br />Takeoff - 23%
+                      Alternate FWD CG Limit<br />Takeoff I - 23%
                     </div>
                   </div>
                 </div>
@@ -1223,7 +1223,7 @@ export function WeightChart({ variant = '300ER', loadingPoints, fuelLoadingPoint
                     onMouseDown={(e) => handleLabelMouseDown(labelId, e)}
                   >
                     <div className="font-normal text-black" style={{ fontSize: '8px' }}>
-                      Alternate CG Limit<br />Takeoff - 26%
+                       Alternate FWD CG Limit<br />Takeoff II - 26%
                     </div>
                   </div>
                 </div>

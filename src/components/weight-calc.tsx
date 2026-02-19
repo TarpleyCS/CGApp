@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { convertWeight, getWeightUnit } from '@/lib/units';
 
 // Import shared constants and utilities
-import { OEW_DATA, LOADING_PATTERNS, POSITION_MAP, BOEING_PALLET_SPECS, CUSTOM_PALLET_POSITIONS } from '@/lib/constants';
+import { OEW_DATA, LOADING_PATTERNS, POSITION_MAP, BOEING_PALLET_SPECS, CUSTOM_PALLET_POSITIONS, WEIGHT_LIMITS, REFERENCE_TEST_FILL, LOWER_DECK_POSITIONS, PALLET_WEIGHT_LIMITS } from '@/lib/constants';
 import { useLoadingPatterns, useOptimizationHistory, usePatternRankings, useCustomPositions, useCustomPalletStyles } from '@/hooks/useDatabase';
 import {
   calculateCumulativeWeights,
@@ -47,6 +47,7 @@ export default function WeightCalculator() {
   const [fuelLoadingPoints, setFuelLoadingPoints] = useState<LoadingPoint[]>([]);
   const [tableData, setTableData] = useState<CalculationResult[]>([]);
   const [testWeights, setTestWeights] = useState<WeightData[]>([]);
+  const [fillKey, setFillKey] = useState(0);
   const [opportunityWindow, setOpportunityWindow] = useState<LoadingPoint[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [customPatterns, setCustomPatterns] = useState<{ [key: string]: string[] }>({});
@@ -150,13 +151,33 @@ export default function WeightCalculator() {
   const handleTestFill = () => {
     const allPatterns = getAllPatterns() as Record<string, readonly string[]>;
     const pattern = allPatterns[selectedPattern] || LOADING_PATTERNS.default;
-    const generatedWeights = pattern.map((position) => ({
-      position,
-      weight: Math.floor(Math.random() * 3000) + 5000 // Random weight between 5000-8000 lbs
-    }));
+    const generatedWeights = pattern.map((position) => {
+      const maxLbs = LOWER_DECK_POSITIONS.has(position)
+        ? PALLET_WEIGHT_LIMITS.LOWER_DECK
+        : PALLET_WEIGHT_LIMITS.MAIN_DECK;
+      const minLbs = Math.min(2000, maxLbs);
+      return {
+        position,
+        weight: Math.floor(Math.random() * (maxLbs - minLbs)) + minLbs
+      };
+    });
 
     setTestWeights(generatedWeights);
+    setFillKey(k => k + 1);
     handleCompute(generatedWeights);
+  };
+
+  const handleReferenceFill = () => {
+    const allPatterns = getAllPatterns() as Record<string, readonly string[]>;
+    const pattern = allPatterns[selectedPattern] || LOADING_PATTERNS.default;
+    const referenceWeights = pattern.map((position) => ({
+      position,
+      weight: REFERENCE_TEST_FILL[position] || 0
+    }));
+
+    setTestWeights(referenceWeights);
+    setFillKey(k => k + 1);
+    handleCompute(referenceWeights);
   };
 
 
@@ -167,16 +188,17 @@ export default function WeightCalculator() {
     if (currentWeights.length === 0) return;
 
     const startTime = Date.now();
-    const initialWeights = [...currentWeights];
+    const deepCopy = (arr: WeightData[]) => arr.map(w => ({ ...w }));
+    const initialWeights = deepCopy(currentWeights);
 
     // Try different arrangements to find one that keeps final CG in optimal range
-    let bestWeights = [...currentWeights];
+    let bestWeights = deepCopy(currentWeights);
     let bestScore = Infinity;
 
     // Try 50 random arrangements
     for (let attempt = 0; attempt < 50; attempt++) {
       // Shuffle the weights but keep positions in order
-      const shuffledWeights = [...currentWeights];
+      const shuffledWeights = deepCopy(currentWeights);
       for (let i = shuffledWeights.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [shuffledWeights[i].weight, shuffledWeights[j].weight] = [shuffledWeights[j].weight, shuffledWeights[i].weight];
@@ -626,15 +648,18 @@ export default function WeightCalculator() {
     // Generate multiple arrangements to find min/max CG for the FINAL weight only
     const arrangements: WeightData[][] = [];
 
+    // Deep-copy helper to avoid mutating the original weight objects
+    const deepCopy = (arr: WeightData[]) => arr.map(w => ({ ...w }));
+
     // Add current arrangement
-    arrangements.push([...weights]);
+    arrangements.push(deepCopy(weights));
 
     // Generate systematic arrangements to explore CG range
     const factorial = (n: number): number => n <= 1 ? 1 : n * factorial(n - 1);
     const numArrangements = Math.min(100, factorial(Math.min(weights.length, 7))); // Limit to prevent too many calculations
 
     for (let i = 0; i < numArrangements; i++) {
-      const shuffled = [...weights];
+      const shuffled = deepCopy(weights);
       // Use different shuffling strategies
       if (i < 20) {
         // Forward-biased arrangements (heavy weights first)
@@ -707,14 +732,15 @@ export default function WeightCalculator() {
 
     const allPatterns = getAllPatterns() as Record<string, readonly string[]>;
     const pattern = allPatterns[selectedPattern] || LOADING_PATTERNS.default;
-    let bestWeights = [...currentWeights];
+    const deepCopy = (arr: WeightData[]) => arr.map(w => ({ ...w }));
+    let bestWeights = deepCopy(currentWeights);
     let bestCG = direction === 'forward' ? -Infinity : Infinity;
 
     // Generate multiple arrangements to find the one with max forward or aft CG
     const numArrangements = Math.min(200, 5040); // Limit to prevent excessive calculations
 
     for (let attempt = 0; attempt < numArrangements; attempt++) {
-      const shuffled = [...currentWeights];
+      const shuffled = deepCopy(currentWeights);
 
       if (attempt === 0) {
         // First attempt: current arrangement
@@ -879,14 +905,22 @@ export default function WeightCalculator() {
               </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <Button
                 onClick={handleTestFill}
                 variant="outline"
                 size="sm"
                 className="bg-blue-50 hover:bg-blue-100 text-black text-xs sm:text-sm"
               >
-                Test Fill
+                Random
+              </Button>
+              <Button
+                onClick={handleReferenceFill}
+                variant="outline"
+                size="sm"
+                className="bg-teal-50 hover:bg-teal-100 text-black text-xs sm:text-sm"
+              >
+                Reference
               </Button>
               <Button
                 onClick={handleOptimize}
@@ -948,7 +982,7 @@ export default function WeightCalculator() {
           <div className="flex-1 overflow-hidden bg-white">
             <div className="h-full overflow-y-auto p-2 sm:p-4">
               <LoadingGrid
-                key={selectedPattern}
+                key={`${selectedPattern}-${fillKey}`}
                 onWeightChange={handleCompute}
                 units={units}
                 onFuelLoad={handleFuelLoad}
@@ -1692,6 +1726,75 @@ export default function WeightCalculator() {
                     </div>
                   </div>
                 </div>
+
+                {/* Weight Limit Checks */}
+                {tableData.length > 1 && (() => {
+                  const limits = WEIGHT_LIMITS[variant];
+                  const zfw = fuelLoaded
+                    ? tableData[tableData.length - 2].sumWeight
+                    : tableData[tableData.length - 1].sumWeight;
+                  const tow = tableData[tableData.length - 1].sumWeight;
+
+                  const checks = [
+                    {
+                      label: 'Max Zero Fuel Weight',
+                      short: 'MZFW',
+                      limit: limits.maxZeroFuelWeight,
+                      actual: zfw,
+                    },
+                    ...(fuelLoaded ? [
+                      {
+                        label: 'Max Landing Weight',
+                        short: 'MLW',
+                        limit: limits.maxLandingWeight,
+                        actual: tow, // simplified — no burn-off calc
+                      },
+                      {
+                        label: 'Max Takeoff Weight',
+                        short: 'MTOW',
+                        limit: limits.maxTakeoffWeight,
+                        actual: tow,
+                      },
+                      {
+                        label: 'Max Taxi Weight',
+                        short: 'MTW',
+                        limit: limits.maxTaxiWeight,
+                        actual: tow,
+                      },
+                    ] : []),
+                  ];
+
+                  const violations = checks.filter(c => c.actual > c.limit);
+
+                  return (
+                    <div className={`p-3 border rounded-lg ${violations.length > 0 ? 'bg-red-50 border-red-300' : 'bg-green-50'}`}>
+                      <h3 className="font-bold text-sm mb-2">Weight Limits</h3>
+                      <div className="text-xs space-y-1">
+                        {checks.map(c => {
+                          const exceeded = c.actual > c.limit;
+                          return (
+                            <div key={c.short} className={`flex justify-between ${exceeded ? 'text-red-700 font-medium' : 'text-black'}`}>
+                              <span>{c.short}</span>
+                              <span className="font-mono">
+                                {new Intl.NumberFormat().format(Math.round(convertWeight(c.actual, units)))} / {new Intl.NumberFormat().format(Math.round(convertWeight(c.limit, units)))} {getWeightUnit(units)}
+                                {exceeded ? ' EXCEEDED' : ''}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {violations.length > 0 && (
+                        <div className="mt-2 p-2 bg-red-100 rounded text-red-800 text-xs font-medium">
+                          {violations.map(v => (
+                            <div key={v.short}>
+                              {v.label} exceeded by {new Intl.NumberFormat().format(Math.round(convertWeight(v.actual - v.limit, units)))} {getWeightUnit(units)}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Envelope Status */}
                 {loadingPoints.length > 1 && (() => {
