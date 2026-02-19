@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { convertWeight, getWeightUnit } from '@/lib/units';
 
 // Import shared constants and utilities
-import { OEW_DATA, LOADING_PATTERNS, POSITION_MAP, BOEING_PALLET_SPECS, CUSTOM_PALLET_POSITIONS, WEIGHT_LIMITS, REFERENCE_TEST_FILL, LOWER_DECK_POSITIONS, PALLET_WEIGHT_LIMITS } from '@/lib/constants';
+import { OEW_DATA, LOADING_PATTERNS, POSITION_MAP, BOEING_PALLET_SPECS, CUSTOM_PALLET_POSITIONS, WEIGHT_LIMITS, REFERENCE_TEST_FILL, LOWER_DECK_POSITIONS, PALLET_WEIGHT_LIMITS, CG_OPTIMIZATION_TARGETS } from '@/lib/constants';
 import { useLoadingPatterns, useOptimizationHistory, usePatternRankings, useCustomPositions, useCustomPalletStyles } from '@/hooks/useDatabase';
 import {
   calculateCumulativeWeights,
@@ -50,6 +50,22 @@ export default function WeightCalculator() {
   const [fillKey, setFillKey] = useState(0);
   const [opportunityWindow, setOpportunityWindow] = useState<LoadingPoint[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [optimizationResult, setOptimizationResult] = useState<{
+    method: string;
+    timestamp: number;
+    duration: number;
+    attempts: number;
+    bestScore: number;
+    initialCG: number;
+    finalCG: number;
+    targetCG: number;
+    targetRange: { min: number; max: number };
+    inEnvelope: boolean;
+    inTargetRange: boolean;
+    weightLimitViolations: number;
+    intermediateViolations: number;
+    swaps: { position: string; from: number; to: number }[];
+  } | null>(null);
   const [customPatterns, setCustomPatterns] = useState<{ [key: string]: string[] }>({});
   const [newPatternName, setNewPatternName] = useState('');
   const [newPatternOrder, setNewPatternOrder] = useState<string[]>([]);
@@ -191,60 +207,192 @@ export default function WeightCalculator() {
     const deepCopy = (arr: WeightData[]) => arr.map(w => ({ ...w }));
     const initialWeights = deepCopy(currentWeights);
 
-    // Try different arrangements to find one that keeps final CG in optimal range
-    let bestWeights = deepCopy(currentWeights);
-    let bestScore = Infinity;
+    const targets = CG_OPTIMIZATION_TARGETS[variant];
 
-    // Try 50 random arrangements
-    for (let attempt = 0; attempt < 50; attempt++) {
-      // Shuffle the weights but keep positions in order
-      const shuffledWeights = deepCopy(currentWeights);
-      for (let i = shuffledWeights.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffledWeights[i].weight, shuffledWeights[j].weight] = [shuffledWeights[j].weight, shuffledWeights[i].weight];
+    // Partition indices by deck type — only shuffle within same deck
+    const mainDeckIndices: number[] = [];
+    const lowerDeckIndices: number[] = [];
+    currentWeights.forEach((w, i) => {
+      if (LOWER_DECK_POSITIONS.has(w.position)) {
+        lowerDeckIndices.push(i);
+      } else {
+        mainDeckIndices.push(i);
+      }
+    });
+
+    // Score an arrangement: lower is better
+    const scoreArrangement = (weights: WeightData[]): number => {
+      let score = 0;
+
+      // Hard penalty for lower deck position weight limit violations
+      for (const w of weights) {
+        if (LOWER_DECK_POSITIONS.has(w.position) && w.weight > PALLET_WEIGHT_LIMITS.LOWER_DECK) {
+          score += 500000;
+        }
       }
 
-      // Calculate the result for this arrangement
-      const { loadingPoints: points } = calculateCumulativeWeights(shuffledWeights, variant);
+      const { loadingPoints: points } = calculateCumulativeWeights(weights, variant);
+      if (points.length < 2) return Infinity;
 
-      if (points.length < 2) continue;
-
-      // Focus primarily on final CG position (last point in loading sequence)
       const finalPoint = points[points.length - 1];
-      let score = 0;
-      let finalViolation = 0;
 
       // Heavy penalty if final CG is out of envelope
       if (!isPointInEnvelope(finalPoint.cg, finalPoint.weight, variant)) {
-        finalViolation = 1;
-        score += 1000000; // Heavy penalty for final CG violation
+        score += 1000000;
       }
 
-      // Secondary consideration: intermediate points
-      let intermediateViolations = 0;
-      points.forEach((point, index) => {
-        if (index === 0 || index === points.length - 1) return; // Skip OEW and final point
+      // CG deviation from target
+      score += Math.abs(finalPoint.cg - targets.target) * 100;
 
-        if (!isPointInEnvelope(point.cg, point.weight, variant)) {
-          intermediateViolations += 1;
+      // Extra penalty if outside target range
+      if (finalPoint.cg < targets.min || finalPoint.cg > targets.max) {
+        const distanceOutside = finalPoint.cg < targets.min
+          ? targets.min - finalPoint.cg
+          : finalPoint.cg - targets.max;
+        score += distanceOutside * 5000;
+      }
+
+      // Penalty for intermediate envelope violations
+      for (let i = 1; i < points.length - 1; i++) {
+        if (!isPointInEnvelope(points[i].cg, points[i].weight, variant)) {
+          score += 1000;
         }
-      });
+      }
 
-      // Prefer arrangements that keep final CG in bounds, then minimize intermediate violations
-      const totalScore = score + (finalViolation * 10000) + (intermediateViolations * 1000);
+      return score;
+    };
 
-      if (totalScore < bestScore) {
-        bestScore = totalScore;
-        bestWeights = [...shuffledWeights];
+    let bestWeights = deepCopy(currentWeights);
+    let bestScore = scoreArrangement(bestWeights);
+    let totalAttempts = 0;
+
+    // Helper to try an arrangement and update best
+    const tryArrangement = (candidate: WeightData[]) => {
+      totalAttempts++;
+      const score = scoreArrangement(candidate);
+      if (score < bestScore) {
+        bestScore = score;
+        bestWeights = deepCopy(candidate);
+      }
+    };
+
+    // Deck-aware shuffle: only shuffle weights within main deck and within lower deck
+    const deckAwareShuffle = (weights: WeightData[]): WeightData[] => {
+      const result = deepCopy(weights);
+      // Shuffle main deck weights among main deck positions
+      const mainWeights = mainDeckIndices.map(i => result[i].weight);
+      for (let i = mainWeights.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [mainWeights[i], mainWeights[j]] = [mainWeights[j], mainWeights[i]];
+      }
+      mainDeckIndices.forEach((idx, i) => { result[idx].weight = mainWeights[i]; });
+      // Shuffle lower deck weights among lower deck positions
+      const lowerWeights = lowerDeckIndices.map(i => result[i].weight);
+      for (let i = lowerWeights.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [lowerWeights[i], lowerWeights[j]] = [lowerWeights[j], lowerWeights[i]];
+      }
+      lowerDeckIndices.forEach((idx, i) => { result[idx].weight = lowerWeights[i]; });
+      return result;
+    };
+
+    // --- Deterministic phase: sort-based heuristics (deck-aware) ---
+    const mainWeightValues = mainDeckIndices.map(i => currentWeights[i].weight);
+    const mainSortedAsc = [...mainWeightValues].sort((a, b) => a - b);
+    const mainSortedDesc = [...mainWeightValues].sort((a, b) => b - a);
+
+    // Sort main deck positions by moment arm
+    const mainPosByArm = mainDeckIndices.map(i => ({
+      idx: i,
+      arm: POSITION_MAP[currentWeights[i].position as keyof typeof POSITION_MAP] || 0
+    })).sort((a, b) => a.arm - b.arm);
+
+    // Heavy-forward: heaviest main deck weights in forward main deck positions
+    const forwardCandidate = deepCopy(currentWeights);
+    mainPosByArm.forEach((pos, i) => {
+      forwardCandidate[pos.idx].weight = mainSortedDesc[i];
+    });
+    tryArrangement(forwardCandidate);
+
+    // Heavy-aft: heaviest main deck weights in aft main deck positions
+    const aftCandidate = deepCopy(currentWeights);
+    mainPosByArm.forEach((pos, i) => {
+      aftCandidate[pos.idx].weight = mainSortedAsc[i];
+    });
+    tryArrangement(aftCandidate);
+
+    // Balanced: heaviest weights in middle main deck positions
+    const balancedCandidate = deepCopy(currentWeights);
+    const mainArms = mainPosByArm.map(p => p.arm);
+    const midArm = (Math.min(...mainArms) + Math.max(...mainArms)) / 2;
+    const mainPosByMidDist = [...mainPosByArm].sort((a, b) =>
+      Math.abs(a.arm - midArm) - Math.abs(b.arm - midArm)
+    );
+    mainPosByMidDist.forEach((pos, i) => {
+      balancedCandidate[pos.idx].weight = mainSortedDesc[i];
+    });
+    tryArrangement(balancedCandidate);
+
+    // --- Random shuffle phase: 200 attempts (deck-aware) ---
+    for (let attempt = 0; attempt < 200; attempt++) {
+      tryArrangement(deckAwareShuffle(currentWeights));
+    }
+
+    // Compute initial CG for results display
+    const { loadingPoints: initPoints } = calculateCumulativeWeights(initialWeights, variant);
+    const initialCG = initPoints.length >= 2 ? initPoints[initPoints.length - 1].cg : 0;
+
+    // Compute final result details
+    const { loadingPoints: finalPoints } = calculateCumulativeWeights(bestWeights, variant);
+    const finalPoint = finalPoints[finalPoints.length - 1];
+    const finalCG = finalPoint?.cg ?? 0;
+    const finalWeight = finalPoint?.weight ?? 0;
+
+    // Count violations for results
+    let weightLimitViolations = 0;
+    for (const w of bestWeights) {
+      if (LOWER_DECK_POSITIONS.has(w.position) && w.weight > PALLET_WEIGHT_LIMITS.LOWER_DECK) {
+        weightLimitViolations++;
       }
     }
+    let intermediateViolations = 0;
+    for (let i = 1; i < finalPoints.length - 1; i++) {
+      if (!isPointInEnvelope(finalPoints[i].cg, finalPoints[i].weight, variant)) {
+        intermediateViolations++;
+      }
+    }
+
+    // Track what changed
+    const swaps: { position: string; from: number; to: number }[] = [];
+    initialWeights.forEach((w, i) => {
+      if (w.weight !== bestWeights[i].weight) {
+        swaps.push({ position: w.position, from: w.weight, to: bestWeights[i].weight });
+      }
+    });
+
+    setOptimizationResult({
+      method: 'Basic (Deck-Aware)',
+      timestamp: Date.now(),
+      duration: Date.now() - startTime,
+      attempts: totalAttempts,
+      bestScore,
+      initialCG,
+      finalCG,
+      targetCG: targets.target,
+      targetRange: { min: targets.min, max: targets.max },
+      inEnvelope: isPointInEnvelope(finalCG, finalWeight, variant),
+      inTargetRange: finalCG >= targets.min && finalCG <= targets.max,
+      weightLimitViolations,
+      intermediateViolations,
+      swaps,
+    });
 
     // Apply the best arrangement found
     setTestWeights(bestWeights);
     handleCompute(bestWeights);
 
     // Track optimization performance
-    const success = bestScore < 1000000; // Success if no major violations
+    const success = bestScore < 1000000;
     await trackOptimization('basic', initialWeights, bestWeights, startTime, success, `${selectedPattern}-basic`);
   };
 
@@ -268,18 +416,54 @@ export default function WeightCalculator() {
 
     const fitnessFunction = createCGFitnessFunction(
       variant,
-      undefined,
+      CG_OPTIMIZATION_TARGETS[variant].target,
       calculateCumulativeWeights,
       isPointInEnvelope
     );
 
     const result = optimizeCargoWithPSO(currentWeights, config, fitnessFunction);
 
+    // Build optimization result for display
+    const targets = CG_OPTIMIZATION_TARGETS[variant];
+    const { loadingPoints: initPts } = calculateCumulativeWeights(initialWeights, variant);
+    const { loadingPoints: finalPts } = calculateCumulativeWeights(result.bestArrangement, variant);
+    const fp = finalPts[finalPts.length - 1];
+    const psoSwaps: { position: string; from: number; to: number }[] = [];
+    initialWeights.forEach((w, i) => {
+      if (w.weight !== result.bestArrangement[i].weight) {
+        psoSwaps.push({ position: w.position, from: w.weight, to: result.bestArrangement[i].weight });
+      }
+    });
+    let psoWtViolations = 0;
+    for (const w of result.bestArrangement) {
+      if (LOWER_DECK_POSITIONS.has(w.position) && w.weight > PALLET_WEIGHT_LIMITS.LOWER_DECK) psoWtViolations++;
+    }
+    let psoIntViolations = 0;
+    for (let i = 1; i < finalPts.length - 1; i++) {
+      if (!isPointInEnvelope(finalPts[i].cg, finalPts[i].weight, variant)) psoIntViolations++;
+    }
+    setOptimizationResult({
+      method: 'PSO (Particle Swarm)',
+      timestamp: Date.now(),
+      duration: Date.now() - startTime,
+      attempts: result.iterations * config.numParticles,
+      bestScore: result.bestFitness,
+      initialCG: initPts.length >= 2 ? initPts[initPts.length - 1].cg : 0,
+      finalCG: fp?.cg ?? 0,
+      targetCG: targets.target,
+      targetRange: { min: targets.min, max: targets.max },
+      inEnvelope: fp ? isPointInEnvelope(fp.cg, fp.weight, variant) : false,
+      inTargetRange: fp ? fp.cg >= targets.min && fp.cg <= targets.max : false,
+      weightLimitViolations: psoWtViolations,
+      intermediateViolations: psoIntViolations,
+      swaps: psoSwaps,
+    });
+
     setTestWeights(result.bestArrangement);
     handleCompute(result.bestArrangement);
 
     // Track optimization performance
-    const success = result.bestFitness < 1000; // Success based on fitness threshold
+    const success = result.bestFitness < 1000;
     await trackOptimization('PSO', initialWeights, result.bestArrangement, startTime, success, `${selectedPattern}-PSO`);
   };
 
@@ -300,7 +484,7 @@ export default function WeightCalculator() {
 
     const objectiveFunction = createObjectiveFunction(
       variant,
-      undefined,
+      CG_OPTIMIZATION_TARGETS[variant].target,
       calculateCumulativeWeights
     );
 
@@ -311,6 +495,42 @@ export default function WeightCalculator() {
     );
 
     const result = optimizeCargoWithILP(currentWeights, config, objectiveFunction, constraintFunction);
+
+    // Build optimization result for display
+    const targets = CG_OPTIMIZATION_TARGETS[variant];
+    const { loadingPoints: initPts } = calculateCumulativeWeights(initialWeights, variant);
+    const { loadingPoints: finalPts } = calculateCumulativeWeights(result.optimalArrangement, variant);
+    const fp = finalPts[finalPts.length - 1];
+    const ilpSwaps: { position: string; from: number; to: number }[] = [];
+    initialWeights.forEach((w, i) => {
+      if (w.weight !== result.optimalArrangement[i].weight) {
+        ilpSwaps.push({ position: w.position, from: w.weight, to: result.optimalArrangement[i].weight });
+      }
+    });
+    let ilpWtViolations = 0;
+    for (const w of result.optimalArrangement) {
+      if (LOWER_DECK_POSITIONS.has(w.position) && w.weight > PALLET_WEIGHT_LIMITS.LOWER_DECK) ilpWtViolations++;
+    }
+    let ilpIntViolations = 0;
+    for (let i = 1; i < finalPts.length - 1; i++) {
+      if (!isPointInEnvelope(finalPts[i].cg, finalPts[i].weight, variant)) ilpIntViolations++;
+    }
+    setOptimizationResult({
+      method: 'ILP (Integer Linear)',
+      timestamp: Date.now(),
+      duration: Date.now() - startTime,
+      attempts: result.iterations,
+      bestScore: result.optimalValue,
+      initialCG: initPts.length >= 2 ? initPts[initPts.length - 1].cg : 0,
+      finalCG: fp?.cg ?? 0,
+      targetCG: targets.target,
+      targetRange: { min: targets.min, max: targets.max },
+      inEnvelope: fp ? isPointInEnvelope(fp.cg, fp.weight, variant) : false,
+      inTargetRange: fp ? fp.cg >= targets.min && fp.cg <= targets.max : false,
+      weightLimitViolations: ilpWtViolations,
+      intermediateViolations: ilpIntViolations,
+      swaps: ilpSwaps,
+    });
 
     setTestWeights(result.optimalArrangement);
     handleCompute(result.optimalArrangement);
@@ -794,7 +1014,7 @@ export default function WeightCalculator() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-white">
       {/* Sidebar */}
       <div className={`${sidebarCollapsed ? 'w-16' : 'w-full max-w-80 lg:w-80 md:w-72 sm:w-64'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 relative min-w-16`}>
         {/* Header */}
@@ -995,10 +1215,10 @@ export default function WeightCalculator() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex">
+      <div className="flex-1 flex min-h-0">
         {/* Chart and Data Section */}
-        <div className="flex-1 flex flex-col">
-          <Tabs defaultValue="chart" className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-h-0">
+          <Tabs defaultValue="chart" className="flex-1 flex flex-col min-h-0">
             <div className="border-b border-gray-200 bg-white px-4">
               <TabsList className="bg-transparent">
                 <TabsTrigger value="chart">CG Envelope Chart</TabsTrigger>
@@ -1007,10 +1227,11 @@ export default function WeightCalculator() {
                 <TabsTrigger value="pallets">Pallet Styles</TabsTrigger>
                 <TabsTrigger value="positions">Custom Positions</TabsTrigger>
                 <TabsTrigger value="analytics">Analytics</TabsTrigger>
+                <TabsTrigger value="optimization">Optimization</TabsTrigger>
               </TabsList>
             </div>
 
-            <div className="flex-1 p-4">
+            <div className="flex-1 p-4 min-h-0">
               <TabsContent value="chart" className="h-full mt-0">
                 <Card className="h-full">
                   <CardContent className="h-full p-4">
@@ -1611,12 +1832,185 @@ export default function WeightCalculator() {
                   </CardContent>
                 </Card>
               </TabsContent>
+
+              <TabsContent value="optimization" className="h-full mt-0">
+                <Card className="h-full">
+                  <CardContent className="h-full p-4 overflow-auto">
+                    {optimizationResult ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-lg font-bold text-black">Last Optimization Result</h3>
+                          <span className="text-xs text-gray-500">
+                            {new Date(optimizationResult.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+
+                        {/* Status Banner */}
+                        <div className={`p-3 rounded-lg border ${
+                          optimizationResult.inEnvelope && optimizationResult.inTargetRange && optimizationResult.weightLimitViolations === 0
+                            ? 'bg-green-50 border-green-200'
+                            : optimizationResult.inEnvelope
+                              ? 'bg-yellow-50 border-yellow-200'
+                              : 'bg-red-50 border-red-200'
+                        }`}>
+                          <p className={`font-semibold ${
+                            optimizationResult.inEnvelope && optimizationResult.inTargetRange && optimizationResult.weightLimitViolations === 0
+                              ? 'text-green-800'
+                              : optimizationResult.inEnvelope
+                                ? 'text-yellow-800'
+                                : 'text-red-800'
+                          }`}>
+                            {optimizationResult.inEnvelope && optimizationResult.inTargetRange && optimizationResult.weightLimitViolations === 0
+                              ? 'Optimization Successful'
+                              : optimizationResult.inEnvelope
+                                ? 'In Envelope (outside target range)'
+                                : 'Optimization Failed — Out of Envelope'}
+                          </p>
+                        </div>
+
+                        {/* Method & Performance */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-gray-50 p-3 rounded-lg">
+                            <p className="text-xs text-gray-500 uppercase tracking-wide">Method</p>
+                            <p className="text-sm font-semibold text-black">{optimizationResult.method}</p>
+                          </div>
+                          <div className="bg-gray-50 p-3 rounded-lg">
+                            <p className="text-xs text-gray-500 uppercase tracking-wide">Duration</p>
+                            <p className="text-sm font-semibold text-black">{optimizationResult.duration}ms ({optimizationResult.attempts} attempts)</p>
+                          </div>
+                        </div>
+
+                        {/* CG Results */}
+                        <div className="border rounded-lg overflow-hidden">
+                          <div className="bg-gray-100 px-3 py-2">
+                            <p className="text-sm font-semibold text-black">CG Analysis (% MAC)</p>
+                          </div>
+                          <div className="p-3 space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Initial CG:</span>
+                              <span className="font-mono text-black">{optimizationResult.initialCG.toFixed(2)}%</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Final CG:</span>
+                              <span className={`font-mono font-bold ${
+                                optimizationResult.inTargetRange ? 'text-green-700' : 'text-orange-600'
+                              }`}>{optimizationResult.finalCG.toFixed(2)}%</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Target CG:</span>
+                              <span className="font-mono text-black">{optimizationResult.targetCG.toFixed(1)}%</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Target Range:</span>
+                              <span className="font-mono text-black">{optimizationResult.targetRange.min}% – {optimizationResult.targetRange.max}%</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Deviation from Target:</span>
+                              <span className="font-mono text-black">{Math.abs(optimizationResult.finalCG - optimizationResult.targetCG).toFixed(2)}%</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">CG Shift:</span>
+                              <span className="font-mono text-black">{(optimizationResult.finalCG - optimizationResult.initialCG) > 0 ? '+' : ''}{(optimizationResult.finalCG - optimizationResult.initialCG).toFixed(2)}%</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Constraint Checks */}
+                        <div className="border rounded-lg overflow-hidden">
+                          <div className="bg-gray-100 px-3 py-2">
+                            <p className="text-sm font-semibold text-black">Constraint Checks</p>
+                          </div>
+                          <div className="p-3 space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">In CG Envelope:</span>
+                              <span className={optimizationResult.inEnvelope ? 'text-green-700 font-semibold' : 'text-red-700 font-semibold'}>
+                                {optimizationResult.inEnvelope ? 'PASS' : 'FAIL'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">In Target Range ({optimizationResult.targetRange.min}–{optimizationResult.targetRange.max}%):</span>
+                              <span className={optimizationResult.inTargetRange ? 'text-green-700 font-semibold' : 'text-orange-600 font-semibold'}>
+                                {optimizationResult.inTargetRange ? 'PASS' : 'OUTSIDE'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Lower Hold Weight Violations:</span>
+                              <span className={optimizationResult.weightLimitViolations === 0 ? 'text-green-700 font-semibold' : 'text-red-700 font-semibold'}>
+                                {optimizationResult.weightLimitViolations === 0 ? 'NONE' : optimizationResult.weightLimitViolations}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Intermediate Envelope Violations:</span>
+                              <span className={optimizationResult.intermediateViolations === 0 ? 'text-green-700 font-semibold' : 'text-orange-600 font-semibold'}>
+                                {optimizationResult.intermediateViolations === 0 ? 'NONE' : optimizationResult.intermediateViolations}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Fitness Score:</span>
+                              <span className="font-mono text-black">{optimizationResult.bestScore.toFixed(1)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Weight Swaps */}
+                        {optimizationResult.swaps.length > 0 && (
+                          <div className="border rounded-lg overflow-hidden">
+                            <div className="bg-gray-100 px-3 py-2">
+                              <p className="text-sm font-semibold text-black">Position Weight Changes ({optimizationResult.swaps.length} positions)</p>
+                            </div>
+                            <div className="max-h-64 overflow-auto">
+                              <table className="w-full text-sm">
+                                <thead className="bg-gray-50 sticky top-0">
+                                  <tr>
+                                    <th className="text-left px-3 py-1 text-gray-600">Position</th>
+                                    <th className="text-right px-3 py-1 text-gray-600">Before (lb)</th>
+                                    <th className="text-right px-3 py-1 text-gray-600">After (lb)</th>
+                                    <th className="text-right px-3 py-1 text-gray-600">Change</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {optimizationResult.swaps.map((swap, i) => (
+                                    <tr key={i} className={`border-t ${LOWER_DECK_POSITIONS.has(swap.position) ? 'bg-blue-50' : ''}`}>
+                                      <td className="px-3 py-1 font-mono text-black">
+                                        {swap.position}
+                                        {LOWER_DECK_POSITIONS.has(swap.position) && <span className="text-xs text-blue-500 ml-1">LD</span>}
+                                      </td>
+                                      <td className="text-right px-3 py-1 font-mono text-black">{swap.from.toLocaleString()}</td>
+                                      <td className="text-right px-3 py-1 font-mono text-black">{swap.to.toLocaleString()}</td>
+                                      <td className={`text-right px-3 py-1 font-mono ${swap.to - swap.from > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                        {swap.to - swap.from > 0 ? '+' : ''}{(swap.to - swap.from).toLocaleString()}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {optimizationResult.swaps.length === 0 && (
+                          <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600">
+                            No position changes were made — the current arrangement was already optimal.
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-400">
+                        <div className="text-center">
+                          <p className="text-lg font-medium">No optimization results yet</p>
+                          <p className="text-sm mt-1">Click Optimize, PSO, or ILP to see results here</p>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
             </div>
           </Tabs>
         </div>
 
         {/* Right Summary Panel */}
-        <div className="hidden sm:flex w-72 xl:w-80 lg:w-72 md:w-64 sm:w-56 bg-white border-l border-gray-200 flex-col">
+        <div className="hidden sm:flex w-72 xl:w-80 lg:w-72 md:w-64 sm:w-56 bg-white border-l border-gray-200 flex-col min-h-0">
           <div className="p-4 border-b border-gray-200">
             <h2 className="text-lg font-bold text-black">Summary</h2>
           </div>

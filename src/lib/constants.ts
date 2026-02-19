@@ -116,6 +116,12 @@ export const CG_CONSTANTS = {
   MAC_REFERENCE: 278.5,
 } as const;
 
+// CG optimization targets per variant (% MAC)
+export const CG_OPTIMIZATION_TARGETS = {
+  '300ER': { target: 25.0, min: 24.0, max: 27.0 },
+  '200LR': { target: 24.0, min: 23.0, max: 26.0 },
+} as const;
+
 // Structural weight limits per variant (lbs)
 export const WEIGHT_LIMITS = {
   '300ER': {
@@ -353,6 +359,25 @@ export const CUSTOM_PALLET_POSITIONS = {
 export const PALLET_WEIGHT_LIMITS = {
   MAIN_DECK: 9000,
   LOWER_DECK: 5000,
+} as const;
+
+// Cargo compartment total weight limits (lbs) — from Boeing 777F load limits table
+// These are the maximum allowable total weights per compartment section
+export const COMPARTMENT_WEIGHT_LIMITS = {
+  forwardHold: {
+    total: 67510,
+    sections: [
+      { positions: ['11P', '12P'], maxWeight: 20017, label: 'FWD Hold Section 1 (B.A. 408–610)' },
+      { positions: ['13P', '21P', '22P', '23P'], maxWeight: 17104, label: 'FWD Hold Section 2 (B.A. 621–968)' },
+    ],
+  },
+  aftHold: {
+    total: 34890,
+    sections: [
+      { positions: ['31P', '32P'], maxWeight: 17690, label: 'AFT Hold Section 1 (B.A. 1437–1540)' },
+      { positions: ['41P', '42P'], maxWeight: 13185, label: 'AFT Hold Section 2 (B.A. 1540–1836)' },
+    ],
+  },
 } as const;
 
 // Lower deck position codes (forward and aft compartments)

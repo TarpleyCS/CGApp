@@ -1,4 +1,5 @@
 import { WeightData, LoadingPoint } from './calculations';
+import { CG_OPTIMIZATION_TARGETS, LOWER_DECK_POSITIONS, PALLET_WEIGHT_LIMITS, COMPARTMENT_WEIGHT_LIMITS } from './constants';
 
 // Particle Swarm Optimization for cargo arrangement
 export interface PSO_Config {
@@ -246,6 +247,35 @@ export function optimizeCargoWithILP(
   };
 }
 
+// Check if an arrangement violates per-position or compartment weight limits
+// Returns the number of violations (0 = valid)
+function countWeightLimitViolations(arrangement: WeightData[]): number {
+  let violations = 0;
+
+  // Per-position lower deck weight limits
+  for (const w of arrangement) {
+    if (LOWER_DECK_POSITIONS.has(w.position) && w.weight > PALLET_WEIGHT_LIMITS.LOWER_DECK) {
+      violations++;
+    }
+  }
+
+  // Compartment section total limits
+  const allSections = [
+    ...COMPARTMENT_WEIGHT_LIMITS.forwardHold.sections,
+    ...COMPARTMENT_WEIGHT_LIMITS.aftHold.sections,
+  ];
+  for (const section of allSections) {
+    const sectionTotal = arrangement
+      .filter(w => (section.positions as readonly string[]).includes(w.position))
+      .reduce((sum, w) => sum + w.weight, 0);
+    if (sectionTotal > section.maxWeight) {
+      violations++;
+    }
+  }
+
+  return violations;
+}
+
 // Fitness function for PSO - minimizes CG deviation and envelope violations
 export function createCGFitnessFunction(
   variant: '300ER' | '200LR',
@@ -263,7 +293,11 @@ export function createCGFitnessFunction(
     
     const finalPoint = loadingPoints[loadingPoints.length - 1];
     let score = 0;
-    
+
+    // Penalty for position/compartment weight limit violations
+    const weightViolations = countWeightLimitViolations(arrangement);
+    score += weightViolations * 500000;
+
     // Penalty for envelope violations
     if (!envelopeFunction(finalPoint.cg, finalPoint.weight, variant)) {
       score += 1000000;
@@ -277,11 +311,22 @@ export function createCGFitnessFunction(
       }
     }
     
-    // Deviation from target CG
-    if (targetCG !== undefined) {
-      score += Math.abs(finalPoint.cg - targetCG) * 100;
+    // Deviation from target CG with range-aware scoring
+    const targets = CG_OPTIMIZATION_TARGETS[variant];
+    const effectiveTarget = targetCG !== undefined ? targetCG : targets.target;
+    const cgDeviation = Math.abs(finalPoint.cg - effectiveTarget);
+
+    // If within the acceptable range, only penalize deviation from target
+    if (finalPoint.cg >= targets.min && finalPoint.cg <= targets.max) {
+      score += cgDeviation * 100;
+    } else {
+      // Outside range: penalize proportionally to distance from nearest bound
+      const distanceOutside = finalPoint.cg < targets.min
+        ? targets.min - finalPoint.cg
+        : finalPoint.cg - targets.max;
+      score += cgDeviation * 100 + distanceOutside * 5000;
     }
-    
+
     return score;
   };
 }
@@ -296,10 +341,15 @@ export function createConstraintFunction(
     if (!calculateFunction || !envelopeFunction) {
       return false;
     }
-    
+
+    // Check position/compartment weight limits
+    if (countWeightLimitViolations(arrangement) > 0) {
+      return false;
+    }
+
     const { loadingPoints } = calculateFunction(arrangement, variant);
     if (loadingPoints.length < 2) return false;
-    
+
     // Check all points are within envelope
     for (let i = 1; i < loadingPoints.length; i++) {
       const point = loadingPoints[i];
@@ -307,7 +357,7 @@ export function createConstraintFunction(
         return false;
       }
     }
-    
+
     return true;
   };
 }
@@ -328,13 +378,9 @@ export function createObjectiveFunction(
     
     const finalPoint = loadingPoints[loadingPoints.length - 1];
     
-    // Minimize deviation from target CG or optimize for center of envelope
-    if (targetCG !== undefined) {
-      return Math.abs(finalPoint.cg - targetCG);
-    } else {
-      // Default: optimize for center of typical operating range
-      const centerCG = variant === '300ER' ? 28.0 : 26.0;
-      return Math.abs(finalPoint.cg - centerCG);
-    }
+    // Minimize deviation from target CG or optimize for center of target range
+    const targets = CG_OPTIMIZATION_TARGETS[variant];
+    const effectiveTarget = targetCG !== undefined ? targetCG : targets.target;
+    return Math.abs(finalPoint.cg - effectiveTarget);
   };
 }
